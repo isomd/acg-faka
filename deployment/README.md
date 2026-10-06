@@ -43,6 +43,8 @@
 
 ## 数据与更新
 
+若构建成功后 SSH 部署中断，可手动运行“构建并部署 acg-faka”，在 `deploy_existing_sha` 中填写原发布提交的完整 SHA。流水线会跳过构建，核对已发布镜像后重新部署。SSH 使用保活消息避免长时间拉取镜像时空闲连接被断开。
+
 - `$DEPLOY_BASE/data` 由服务器保存，流水线不会上传或覆盖这个目录。里面有 `config`、`install`、`assets_cache`、`plugins`、`pay`、`themes`、`runtime`，以及使用容器内置服务时才会出现的 `mysql`、`redis`。当前生产流水线显式使用外部数据库模式，不启动容器内置 MySQL/Redis。
 - 镜像包含加密 JSON；解密密钥只在服务器的 `$DEPLOY_BASE/secrets` 下保存，并在容器启动时复制到容器临时层。密钥不进入 Git 仓库或镜像层。
 - 流水线只替换名为 `acg-faka-app` 的应用容器。旧容器保留为 `acg-faka-previous`。新容器的 HTTP `/healthz` 和数据库连接检查失败时，脚本恢复旧容器。

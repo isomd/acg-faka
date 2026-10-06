@@ -4,6 +4,11 @@ on:
   push:
     tags: ['[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
+    inputs:
+      deploy_existing_sha:
+        description: '仅重新部署已有 SHA 镜像（填写完整 40 位提交 SHA；留空则构建）'
+        required: false
+        type: string
 
 concurrency:
   group: acg-faka-production
@@ -16,7 +21,7 @@ jobs:
     permissions:
       contents: read
     env:
-      IMAGE: ${{ secrets.DOCKER_REPO }}/acg-faka:sha-${{ github.sha }}
+      IMAGE: ${{ secrets.DOCKER_REPO }}/acg-faka:sha-${{ inputs.deploy_existing_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +33,12 @@ jobs:
           coverage: none
 
       - name: 核对加密配置和源码
+        env:
+          EXISTING_SHA: ${{ inputs.deploy_existing_sha }}
         run: |
+          if [[ -n "$EXISTING_SHA" ]]; then
+            [[ "$EXISTING_SHA" =~ ^[a-f0-9]{40}$ ]]
+          fi
           test -s deployment/database.enc.json
           php -r '$e=json_decode(file_get_contents("deployment/database.enc.json"),true,8,JSON_THROW_ON_ERROR); if (($e["version"]??null)!==1 || ($e["cipher"]??null)!=="aes-256-gcm") exit(1);'
           test -f app/Pay/Mercury/Impl/Pay.php
@@ -43,9 +53,11 @@ jobs:
           php tests/MercuryProtocolTest.php
 
       - name: 准备 QEMU
+        if: inputs.deploy_existing_sha == ''
         uses: docker/setup-qemu-action@v3
 
       - name: 准备 Buildx
+        if: inputs.deploy_existing_sha == ''
         uses: docker/setup-buildx-action@v3
 
       - name: 计算发布标签
@@ -69,6 +81,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: 构建并推送镜像
+        if: inputs.deploy_existing_sha == ''
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -109,8 +122,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq sshpass
           export SSHPASS="$PROD_SERVER_PWD"
-          ssh_args=(-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PROD_SERVER_PORT")
+          ssh_args=(-o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -p "$PROD_SERVER_PORT")
           sshpass -e ssh "${ssh_args[@]}" "$PROD_SERVER_USER@$PROD_SERVER_ADDRESS" "mkdir -p '$DEPLOY_BASE'"
-          sshpass -e scp -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PROD_SERVER_PORT" deployment/deploy.sh "$PROD_SERVER_USER@$PROD_SERVER_ADDRESS:$DEPLOY_BASE/deploy.sh"
+          sshpass -e scp -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -P "$PROD_SERVER_PORT" deployment/deploy.sh "$PROD_SERVER_USER@$PROD_SERVER_ADDRESS:$DEPLOY_BASE/deploy.sh"
           printf '%s\n' "$ACG_CONFIG_KEY_HEX" \
             | sshpass -e ssh "${ssh_args[@]}" "$PROD_SERVER_USER@$PROD_SERVER_ADDRESS" "bash '$DEPLOY_BASE/deploy.sh' '$IMAGE' '$DEPLOY_BASE' '$ACG_HTTP_PORT'"
