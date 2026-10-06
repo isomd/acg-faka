@@ -29,17 +29,21 @@
 !.htaccess
 !LICENSE
 !README.md
+!deployment/config.example.json
+!deployment/database.enc.json
 
 # ── 3) 再从放行的目录里挖掉不该进镜像的东西 ────────────────────────────────
 
 # 插件 / 支付插件 / 模板：公开版一个都不带，用户从应用商店安装。
-# app/Pay 只保留根目录那三个基类，app/View/User/Theme 只保留免费的 Cartoon。
+# app/Pay 保留根目录基类与当前项目的 Mercury；app/View/User/Theme 只保留免费的 Cartoon。
 # 注意排的是**目录条目本身**（`/*`）而不是目录里的文件（`/**`）：
 # 后者只清空内容、留下一堆空壳目录，后台模板/支付列表是按目录扫的，
 # 会列出十几个点开就报错的「主题」。
 app/Plugin/*
 app/Pay/*
 !app/Pay/*.php
+!app/Pay/Mercury
+!app/Pay/Mercury/**
 app/View/User/Theme/*
 !app/View/User/Theme/Cartoon
 !app/View/User/Theme/Cartoon/**

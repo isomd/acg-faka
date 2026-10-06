@@ -286,20 +286,21 @@ class Install extends User
         } catch (\Throwable $e) {
         }
 
-        //设置数据库账号密码
-        setConfig([
-            'driver' => 'mysql',
-            'host' => $host,
-            'port' => $port,
-            'database' => $db['database'],
-            'username' => $db['username'],
-            'password' => $db['password'],
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
-            'prefix' => $db['prefix']
-        ], BASE_PATH . "/config/database.php");
-
-        Opcache::invalidate(BASE_PATH . "/config/database.php");
+        //加密部署模式下，数据库凭据只从密文和运行时密钥读取，不回写明文文件。
+        if (!\Kernel\Util\EncryptedDeploymentConfig::enabled()) {
+            setConfig([
+                'driver' => 'mysql',
+                'host' => $host,
+                'port' => $port,
+                'database' => $db['database'],
+                'username' => $db['username'],
+                'password' => $db['password'],
+                'charset' => 'utf8mb4',
+                'collation' => 'utf8mb4_unicode_ci',
+                'prefix' => $db['prefix']
+            ], BASE_PATH . "/config/database.php");
+            Opcache::invalidate(BASE_PATH . "/config/database.php");
+        }
 
         unlink($sqlFile . ".tmp");
         file_put_contents(BASE_PATH . '/kernel/Install/Lock', "");
@@ -352,6 +353,14 @@ class Install extends User
      */
     private function builtin(): ?array
     {
+        if (\Kernel\Util\EncryptedDeploymentConfig::enabled()) {
+            $db = \Kernel\Util\EncryptedDeploymentConfig::database();
+            return [
+                'host' => $db['host'], 'port' => $db['port'],
+                'database' => $db['database'], 'username' => $db['username'],
+                'password' => $db['password'], 'prefix' => $db['prefix'],
+            ];
+        }
         $get = static function (string $key): string {
             $v = getenv($key);
             return is_string($v) ? trim($v) : '';
@@ -421,6 +430,10 @@ class Install extends User
      */
     private function databaseInput(): array
     {
+        if (\Kernel\Util\EncryptedDeploymentConfig::enabled()) {
+            //禁止浏览器提交另一套凭据；否则安装 SQL 会落入非预期的数据库。
+            return $this->builtin();
+        }
         //页面没动过任何一项、密码也留空时会带上这个标记：整套连接信息由服务端从
         //环境变量取，密码始终不经过浏览器。
         if (($_POST['use_builtin'] ?? '') === '1') {

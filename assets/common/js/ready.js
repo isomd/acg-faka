@@ -71,6 +71,15 @@ documentReady(bindReadyLifecycle);
 
 function flushReadyQueue() {
     readyLoaderState.timer = null;
+
+    // ready.js 位于页面头部，公共依赖包则在 body 末尾加载。首次直达页面时，
+    // DOMContentLoaded 可能早于 jQuery/util 就绪；此时执行控制器会因 `$` 未定义
+    // 而永久丢失事件绑定。保留队列，等核心依赖可用后再消费。
+    if (typeof window.jQuery !== 'function' || typeof util === 'undefined') {
+        readyLoaderState.timer = setTimeout(flushReadyQueue, 10);
+        return;
+    }
+
     const generation = readyLoaderState.generation;
     const calls = readyLoaderState.queue.splice(0)
         .filter(entry => {
@@ -117,9 +126,12 @@ function flushReadyQueue() {
             return;
         }
 
-        // A removed <script src> may still execute after its network request
-        // completes. Fetch first, then inject only while this PJAX generation is
-        // current, so a late controller can never initialise the next page.
+        // Fetch first and execute only while this PJAX generation is current, so
+        // a late controller can never initialise the next page. The site CSP
+        // explicitly permits unsafe-eval for legacy controllers; using indirect
+        // eval here also avoids relying on a dynamically copied nonce, which is
+        // hidden by some browsers and would silently block an injected inline
+        // script.
         const load = {generation: generation, cancelled: false, controllers: new Set()};
         readyLoaderState.activeLoads.set(batch, load);
         const requests = sourceList.map(source => {
@@ -154,16 +166,17 @@ function flushReadyQueue() {
                     }
                     continue;
                 }
-                const script = document.createElement('script');
-                if (__cspNonce) script.nonce = __cspNonce;
-                script.setAttribute('ready', 'true');
-                script.setAttribute('data-ready-controller', 'true');
-                script.setAttribute('data-ready-src', result.source);
-                script.setAttribute('data-ready-batch', String(batch));
-                script.setAttribute('data-ready-generation', String(generation));
                 const sourceUrl = new URL(result.source, window.location.href).href.replace(/[\r\n]/g, '');
-                script.textContent = result.code + '\n//# sourceURL=' + sourceUrl;
-                document.body.appendChild(script);
+                try {
+                    (0, eval)(result.code + '\n//# sourceURL=' + sourceUrl);
+                } catch (error) {
+                    console.error('Controller execution failed:', result.source, error);
+                    $(document).trigger('admin:controller:error', [{
+                        src: result.source,
+                        batch: batch,
+                        error: error
+                    }]);
+                }
             }
             if (!load.cancelled && generation === readyLoaderState.generation) {
                 $(document).trigger('admin:controllers:ready', [{

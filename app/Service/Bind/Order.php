@@ -564,7 +564,7 @@ class Order implements \App\Service\Order
         $from = $_COOKIE['promotion_from'] ?? 0;
         $owner = $user == null ? 0 : $user->id;
         $race = (string)$map['race'];
-        $requestNo = (string)$map['request_no'];
+        $requestNo = trim((string)($map['request_no'] ?? ''));
         $sku = $map['sku'] ?: null;
 
         if ($user && $user->pid > 0) {
@@ -583,6 +583,45 @@ class Order implements \App\Service\Order
 
         if (!$commodity) {
             throw new JSONException("商品不存在");
+        }
+
+        //Dola 的外部提货不能跟随本地事务回滚。浏览器会为一次购买意图生成稳定请求号：
+        //若上次响应在本地提交后丢失，直接回放原订单；若本地事务在提货后回滚，后续创建的
+        //新订单仍用同一请求号从独立提货账本取回原账号，不会再向上游扣一次。
+        if ((int)($commodity->shared?->type ?? 0) === 3 && $requestNo !== '') {
+            if (!preg_match('/^[A-Za-z0-9_-]{16,19}$/D', $requestNo)) {
+                throw new JSONException('下单请求号格式不正确，请刷新页面后重试');
+            }
+            $previous = \App\Model\Order::with(['pay'])
+                ->where('request_no', $requestNo)
+                ->first();
+            if ($previous) {
+                if (
+                    (int)$previous->owner !== $owner
+                    || (int)$previous->commodity_id !== $commodityId
+                    || (int)$previous->card_num !== $num
+                    || (int)$previous->pay_id !== $payId
+                    || ($owner === 0 && trim((string)$previous->contact) !== trim($contact))
+                ) {
+                    throw new JSONException('该下单请求号已用于另一笔订单，请刷新页面后重试');
+                }
+                if ((int)$previous->status !== 1 && (string)($previous->pay?->handle ?? '') === '#system') {
+                    throw new JSONException('订单正在处理中，请稍后通过订单记录查询');
+                }
+                $replayUrl = (int)$previous->status === 1
+                    ? ((int)$previous->owner === 0
+                        ? Client::getUrl() . '/user/index/query?tradeNo=' . $previous->trade_no
+                        : Client::getUrl() . '/user/personal/purchaseRecord?tradeNo=' . $previous->trade_no)
+                    : (string)$previous->pay_url;
+                return [
+                    'url' => $replayUrl,
+                    'amount' => $previous->amount,
+                    'tradeNo' => $previous->trade_no,
+                    'secret' => (int)$previous->status === 1 ? (string)$previous->secret : null,
+                    'leave_message' => \App\Model\Order::resolveLeaveMessage($previous->leave_message, null),
+                    'stock' => max(0, (int)$commodity->stock),
+                ];
+            }
         }
 
         if ($commodity->status != 1) {
@@ -928,36 +967,51 @@ class Order implements \App\Service\Order
 
                     $order->gateway_amount = Currency::toCny($order->amount);
 
-                    $payObject = PayFactory::make(
-                        $pay,
-                        (string)$order->trade_no,
-                        (float)$order->gateway_amount,
-                        $callbackDomain . '/user/api/order/callback.' . $order->trade_no,
-                        $returnUrl,
-                        Client::getAddress()
-                    );
-
-                    $trade = $payObject->trade();
-                    if ($trade instanceof PayEntity) {
-                        $order->pay_url = $trade->getUrl();
-                        switch ($trade->getType()) {
-                            case \App\Pay\Pay::TYPE_REDIRECT:
-                                $url = $order->pay_url;
-                                break;
-                            case \App\Pay\Pay::TYPE_LOCAL_RENDER:
-                                $url = '/user/pay/order.' . $order->trade_no . ".1";
-                                break;
-                            case \App\Pay\Pay::TYPE_SUBMIT:
-                                $url = '/user/pay/order.' . $order->trade_no . ".2";
-                                break;
-                        }
+                    if ((string)$pay->handle === 'Mercury') {
+                        // Mercury 的远程请求必须发生在本地订单提交之后。这样即使 HTTP 超时、
+                        // 返回结果未知，本地业务号和价格快照仍然存在，可用同一 clientOrderNo 核对/重试。
                         $order->save();
-                        $option = $trade->getOption();
-                        if (!empty($option)) {
-                            OrderOption::create($order->id, $trade->getOption());
-                        }
+                        $url = $returnUrl;
+                        $mercuryDeferred = [
+                            'pay_id' => (int)$pay->id,
+                            'trade_no' => (string)$order->trade_no,
+                            'amount' => (float)$order->gateway_amount,
+                            'callback_url' => $callbackDomain . '/user/api/mercury/webhook',
+                            'return_url' => $returnUrl,
+                            'client_ip' => Client::getAddress()
+                        ];
                     } else {
-                        throw new JSONException("支付方式未部署成功");
+                        $payObject = PayFactory::make(
+                            $pay,
+                            (string)$order->trade_no,
+                            (float)$order->gateway_amount,
+                            $callbackDomain . '/user/api/order/callback.' . $order->trade_no,
+                            $returnUrl,
+                            Client::getAddress()
+                        );
+
+                        $trade = $payObject->trade();
+                        if ($trade instanceof PayEntity) {
+                            $order->pay_url = $trade->getUrl();
+                            switch ($trade->getType()) {
+                                case \App\Pay\Pay::TYPE_REDIRECT:
+                                    $url = $order->pay_url;
+                                    break;
+                                case \App\Pay\Pay::TYPE_LOCAL_RENDER:
+                                    $url = '/user/pay/order.' . $order->trade_no . ".1";
+                                    break;
+                                case \App\Pay\Pay::TYPE_SUBMIT:
+                                    $url = '/user/pay/order.' . $order->trade_no . ".2";
+                                    break;
+                            }
+                            $order->save();
+                            $option = $trade->getOption();
+                            if (!empty($option)) {
+                                OrderOption::create($order->id, $trade->getOption());
+                            }
+                        } else {
+                            throw new JSONException("支付方式未部署成功");
+                        }
                     }
                 }
             }
@@ -966,8 +1020,40 @@ class Order implements \App\Service\Order
 
             hook(Hook::USER_API_ORDER_TRADE_AFTER, $lockedCommodity, $order, $pay);
 
-            return ['url' => $url, 'amount' => $order->amount, 'tradeNo' => $order->trade_no, 'secret' => $secret, 'leave_message' => \App\Model\Order::resolveLeaveMessage($order->leave_message, null)];
+            $response = ['url' => $url, 'amount' => $order->amount, 'tradeNo' => $order->trade_no, 'secret' => $secret, 'leave_message' => \App\Model\Order::resolveLeaveMessage($order->leave_message, null)];
+            if (isset($mercuryDeferred)) {
+                $response['_mercury_deferred'] = $mercuryDeferred;
+            }
+            return $response;
         });
+
+        if (isset($result['_mercury_deferred'])) {
+            $deferred = $result['_mercury_deferred'];
+            unset($result['_mercury_deferred']);
+            $storedPay = Pay::query()->find((int)$deferred['pay_id']);
+            if (!$storedPay || (string)$storedPay->handle !== 'Mercury') {
+                throw new JSONException('Mercury 支付接口已变更，请联系管理员核对订单');
+            }
+            $payObject = PayFactory::make(
+                $storedPay,
+                (string)$deferred['trade_no'],
+                (float)$deferred['amount'],
+                (string)$deferred['callback_url'],
+                (string)$deferred['return_url'],
+                (string)$deferred['client_ip']
+            );
+            $trade = $payObject->trade();
+            if (!$trade instanceof PayEntity || $trade->getType() !== \App\Pay\Pay::TYPE_REDIRECT) {
+                throw new JSONException('Mercury 支付方式未部署成功');
+            }
+            $storedOrder = \App\Model\Order::query()->where('trade_no', (string)$deferred['trade_no'])->first();
+            if (!$storedOrder || (int)$storedOrder->status !== 0) {
+                throw new JSONException('Mercury 本地订单状态已变化，请通过订单记录查询');
+            }
+            $storedOrder->pay_url = $trade->getUrl();
+            $storedOrder->save();
+            $result['url'] = $trade->getUrl();
+        }
         $result["stock"] = $shopService->getItemStock($commodity, $race, $sku);
         return $result;
     }
@@ -1081,7 +1167,10 @@ class Order implements \App\Service\Order
         $shared = $commodity->shared;
 
         if ($shared) {
-            $order->secret = $this->shared->trade($shared, $commodity, $order->contact, $order->card_num, (int)$order->card_id, $order->create_device, (string)$order->password, (string)$order->race, $order->sku ?: [], $order->widget, $order->trade_no);
+            $sharedRequestNo = (int)$shared->type === 3 && trim((string)$order->request_no) !== ''
+                ? trim((string)$order->request_no)
+                : (string)$order->trade_no;
+            $order->secret = $this->shared->trade($shared, $commodity, $order->contact, $order->card_num, (int)$order->card_id, $order->create_device, (string)$order->password, (string)$order->race, $order->sku ?: [], $order->widget, $sharedRequestNo);
             $order->delivery_status = 1;
         } else {
             if ($commodity->delivery_way == 0) {
@@ -1408,11 +1497,20 @@ class Order implements \App\Service\Order
         return $data;
     }
 
-    public function giftOrder(Commodity $commodity, string $race = "", int $num = 1, string $contact = "", string $password = "", ?int $cardId = null, int $userId = 0, string $widget = "[]"): array
+    public function giftOrder(Commodity $commodity, string $race = "", int $num = 1, string $contact = "", string $password = "", ?int $cardId = null, int $userId = 0, string $widget = "[]", string $requestNo = ""): array
     {
-        return DB::transaction(function () use ($race, $widget, $contact, $password, $num, $cardId, $commodity, $userId) {
+        $requestNo = trim($requestNo);
+        if (strlen($requestNo) > 19) {
+            throw new JSONException('赠送订单幂等请求号不能超过 19 个字符');
+        }
+
+        return DB::transaction(function () use ($race, $widget, $contact, $password, $num, $cardId, $commodity, $userId, $requestNo) {
             $lockedCommodity = $this->lockCommodityForOrder($commodity);
             $this->lockLocalDraftCardForOrder($lockedCommodity, (int)$cardId);
+
+            if ($requestNo !== '' && \App\Model\Order::query()->where('request_no', $requestNo)->exists()) {
+                throw new JSONException('赠送订单请求标识已存在');
+            }
 
             $date = Date::current();
             $order = new  \App\Model\Order();
@@ -1431,6 +1529,9 @@ class Order implements \App\Service\Order
             $order->contact = trim($contact);
             $order->delivery_status = 0;
             $order->widget = $widget;
+            if ($requestNo !== '') {
+                $order->request_no = $requestNo;
+            }
 
             $order->leave_message = $lockedCommodity->leave_message;
             $order->rent = 0;

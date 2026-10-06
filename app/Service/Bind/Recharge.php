@@ -82,7 +82,7 @@ class Recharge implements \App\Service\Recharge
             $callbackDomain = $clientDomain;
         }
 
-        return Db::transaction(function () use ($user, $pay, $amount, $callbackDomain, $clientDomain) {
+        $result = Db::transaction(function () use ($user, $pay, $amount, $callbackDomain, $clientDomain) {
             $order = new UserRecharge();
             $order->trade_no = Str::generateTradeNo();
             $order->user_id = $user->id;
@@ -101,6 +101,24 @@ class Recharge implements \App\Service\Recharge
 
             //站点货币 → CNY 快照（与商品订单同构）：传给插件与回调比对都认这份快照
             $order->gateway_amount = Currency::toCny($order->amount);
+
+            if ((string)$pay->handle === 'Mercury') {
+                // 先提交本地充值单，再在事务外请求 Mercury，保留网络结果未知时的核对依据。
+                $order->save();
+                return [
+                    'url' => $clientDomain . '/user/recharge/index',
+                    'amount' => $order->amount,
+                    'tradeNo' => $order->trade_no,
+                    '_mercury_deferred' => [
+                        'pay_id' => (int)$pay->id,
+                        'trade_no' => (string)$order->trade_no,
+                        'amount' => (float)$order->gateway_amount,
+                        'callback_url' => $callbackDomain . '/user/api/mercury/webhook',
+                        'return_url' => $clientDomain . '/user/recharge/index',
+                        'client_ip' => (string)$order->create_ip
+                    ]
+                ];
+            }
 
             $payObject = PayFactory::make(
                 $pay,
@@ -141,6 +159,36 @@ class Recharge implements \App\Service\Recharge
 
             return ['url' => $url, 'amount' => $order->amount, 'tradeNo' => $order->trade_no];
         });
+
+        if (isset($result['_mercury_deferred'])) {
+            $deferred = $result['_mercury_deferred'];
+            unset($result['_mercury_deferred']);
+            $storedPay = Pay::query()->find((int)$deferred['pay_id']);
+            if (!$storedPay || (string)$storedPay->handle !== 'Mercury') {
+                throw new JSONException('Mercury 支付接口已变更，请联系管理员核对充值单');
+            }
+            $payObject = PayFactory::make(
+                $storedPay,
+                (string)$deferred['trade_no'],
+                (float)$deferred['amount'],
+                (string)$deferred['callback_url'],
+                (string)$deferred['return_url'],
+                (string)$deferred['client_ip']
+            );
+            $trade = $payObject->trade();
+            if (!$trade instanceof PayEntity || $trade->getType() !== \App\Pay\Pay::TYPE_REDIRECT) {
+                throw new JSONException('Mercury 支付方式未部署成功');
+            }
+            $storedOrder = UserRecharge::query()->where('trade_no', (string)$deferred['trade_no'])->first();
+            if (!$storedOrder || (int)$storedOrder->status !== 0) {
+                throw new JSONException('Mercury 本地充值单状态已变化，请通过充值记录查询');
+            }
+            $storedOrder->pay_url = $trade->getUrl();
+            $storedOrder->save();
+            $result['url'] = $trade->getUrl();
+        }
+
+        return $result;
     }
 
     /**

@@ -1,0 +1,69 @@
+#{include file="./Header.html"}
+<style>
+  .pickup-shell{max-width:920px;margin:34px auto 64px}.pickup-hero{text-align:center;margin-bottom:24px}.pickup-hero__icon{width:72px;height:72px;margin:0 auto 14px;border-radius:24px;display:grid;place-items:center;background:linear-gradient(135deg,#6d5dfc,#36c5f0);color:#fff;box-shadow:0 16px 38px rgba(83,92,230,.24)}.pickup-hero__icon i{font-size:32px}.pickup-tabs{display:flex;max-width:420px;margin:0 auto 22px;padding:5px;border-radius:16px;background:rgba(127,127,127,.09)}.pickup-tab{flex:1;border:0;border-radius:12px;padding:10px 16px;background:transparent;color:#707786;font-weight:600;transition:.18s}.pickup-tab.active{background:#fff;color:var(--acg-primary);box-shadow:0 5px 18px rgba(31,41,55,.09)}.pickup-panel{display:none}.pickup-panel.active{display:block}.pickup-card{border:0;border-radius:22px;background:#fff;box-shadow:0 18px 50px rgba(31,41,55,.10);overflow:hidden}.pickup-card .panel-body{padding:30px}.pickup-card__title{display:flex;align-items:center;gap:12px;margin-bottom:22px}.pickup-card__title-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(109,93,252,.1);color:var(--acg-primary)}.pickup-label{font-weight:700;margin-bottom:8px}.pickup-code-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}.pickup-code{height:52px;border-radius:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.04em}.pickup-check{height:52px;border-radius:14px;white-space:nowrap}.pickup-next-row{display:grid;grid-template-columns:minmax(210px,260px) minmax(0,1fr);gap:18px;align-items:end;margin-top:18px}.quantity-control{height:52px;display:grid;grid-template-columns:48px 1fr 48px;border:1px solid #dee2e6;border-radius:14px;overflow:hidden;background:#fff}.quantity-control button{border:0;background:rgba(127,127,127,.08);color:#586070;font-size:20px}.quantity-control input{border:0;border-left:1px solid #e8eaf0;border-right:1px solid #e8eaf0;text-align:center;font-weight:700;outline:0;min-width:0}.pickup-submit{height:52px;border-radius:14px;font-weight:600}.pickup-shortcuts{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:13px}.pickup-history-btn{border:0;background:transparent;color:var(--acg-primary);padding:0}.pickup-help{color:#7b8190;font-size:13px}.code-summary{display:none;margin-top:20px;padding:18px;border:1px solid rgba(109,93,252,.15);border-radius:16px;background:rgba(109,93,252,.045)}.summary-head{display:flex;justify-content:space-between;gap:12px}.summary-name{font-weight:700}.summary-counts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.summary-count{text-align:center;padding:10px;border-radius:12px;background:#fff}.summary-count strong{display:block;font-size:19px}.summary-count span{font-size:12px;color:#7b8190}.summary-progress{height:7px;border-radius:999px;background:#e9eaf1;overflow:hidden;margin-top:13px}.summary-progress span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#6d5dfc,#36c5f0)}.redeem-result{display:none;margin-top:22px;border-top:1px solid #edf0f5;padding-top:22px}.result-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.result-order{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#7b8190;font-size:13px}.result-items{display:grid;gap:10px;margin-top:16px}.result-item{display:grid;grid-template-columns:36px minmax(0,1fr) 38px;align-items:center;gap:10px;padding:12px;border:1px solid #e7eaf0;border-radius:13px;background:#fafbfc}.result-item__index{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:rgba(109,93,252,.1);color:var(--acg-primary);font-weight:700;font-size:12px}.result-item__value{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all}.result-item__copy{border:0;background:transparent;color:var(--acg-primary)}.result-raw{display:none;margin-top:12px;padding:16px;border-radius:13px;background:rgba(127,127,127,.09);white-space:pre-wrap;word-break:break-all;max-height:320px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.result-note{display:none;white-space:pre-line;margin-top:14px;padding:14px;border-left:3px solid var(--acg-primary);background:rgba(127,127,127,.08);border-radius:8px}.result-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.history-wrap{display:none;margin-top:22px;border-top:1px solid #edf0f5;padding-top:22px}.history-list{display:grid;gap:12px}.history-item{padding:16px;border:1px solid #e7eaf0;border-radius:14px}.history-item__head{display:flex;justify-content:space-between;gap:12px}.history-item__secret{margin-top:10px;padding:12px;border-radius:10px;background:#f6f7f9;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}.query-form-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px}.query-input{height:52px;border-radius:14px}.query-submit{height:52px;border-radius:14px;white-space:nowrap}.query-state{display:none;margin-top:20px;text-align:center;padding:22px;border-radius:15px;background:#f7f8fa}.order-list{display:grid;gap:14px;margin-top:20px}.query-order{border:1px solid #e5e8ef;border-radius:16px;padding:18px}.query-order__head{display:flex;justify-content:space-between;gap:14px}.query-order__no{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700}.query-order__meta{color:#7b8190;font-size:13px;margin-top:4px}.query-order__secret{margin-top:14px;padding:14px;border-radius:12px;background:#f6f7f9;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.query-password{display:flex;gap:10px;margin-top:14px}.query-password input{border-radius:11px}.query-password button{border-radius:11px;white-space:nowrap}
+  @media(max-width:650px){.pickup-shell{margin:22px auto 42px}.pickup-card .panel-body{padding:20px}.pickup-code-row,.pickup-next-row,.query-form-row{grid-template-columns:1fr}.pickup-check,.pickup-submit,.query-submit{width:100%}.pickup-next-row{gap:14px}.summary-counts{gap:6px}.summary-count{padding:9px 4px}.result-head,.query-order__head{display:block}.result-actions{justify-content:stretch}.result-actions .btn{flex:1}.pickup-shortcuts{align-items:flex-start;flex-direction:column}.query-password{display:block}.query-password button{width:100%;margin-top:10px}}
+</style>
+<main class="container py-4">
+  <div class="pickup-shell">
+    <div class="pickup-hero">
+      <div class="pickup-hero__icon"><i class="fa-duotone fa-regular fa-box-open"></i></div>
+      <h3>#{t("自助提货中心")}</h3>
+      <p class="text-muted mb-0">#{t("兑换码分批提取、余额查询和订单查询都在这里完成")}</p>
+    </div>
+
+    <div class="pickup-tabs" role="tablist">
+      <button class="pickup-tab active" type="button" data-panel="redeem"><i class="fa-duotone fa-regular fa-key me-1"></i> #{t("兑换提货")}</button>
+      <button class="pickup-tab" type="button" data-panel="query"><i class="fa-duotone fa-regular fa-magnifying-glass me-1"></i> #{t("订单查询")}</button>
+    </div>
+
+    <section class="pickup-panel active" data-panel-content="redeem">
+      <div class="panel pickup-card">
+        <div class="panel-body">
+          <div class="pickup-card__title"><span class="pickup-card__title-icon"><i class="fa-duotone fa-regular fa-gift"></i></span><div><h5 class="mb-1">#{t("兑换码提货")}</h5><div class="text-muted small">#{t("可按需要分多次提取，未用额度会保留")}</div></div></div>
+          <form class="redeem-form" autocomplete="off">
+            <label class="pickup-label" for="redeem-code">#{t("兑换码")}</label>
+            <div class="pickup-code-row">
+              <input id="redeem-code" class="form-control pickup-code" name="code" maxlength="64" spellcheck="false" autocomplete="one-time-code" placeholder="#{t('请输入兑换码')}" required>
+              <button type="button" class="btn btn-outline-primary pickup-check"><i class="fa-duotone fa-regular fa-chart-pie me-1"></i> #{t("查询余额")}</button>
+            </div>
+            <div class="pickup-next-row">
+              <div><label class="pickup-label" for="redeem-quantity">#{t("本次提取数量")}</label><div class="quantity-control"><button type="button" data-quantity="minus" aria-label="#{t('减少数量')}">−</button><input id="redeem-quantity" name="quantity" type="number" value="1" min="1" max="1000" inputmode="numeric"><button type="button" data-quantity="plus" aria-label="#{t('增加数量')}">+</button></div></div>
+              <button type="submit" class="btn btn-primary pickup-submit"><i class="fa-duotone fa-regular fa-box-open me-2"></i>#{t("立即提取账号")}</button>
+            </div>
+          </form>
+          <div class="pickup-shortcuts"><span class="pickup-help">#{t("每次提取都会生成独立订单；提交失败不会扣减额度。")}</span><button type="button" class="pickup-history-btn"><i class="fa-duotone fa-regular fa-clock-rotate-left me-1"></i>#{t("查看提货记录")}</button></div>
+
+          <div class="code-summary">
+            <div class="summary-head"><div><div class="summary-name"></div><small class="text-muted">#{t("兑换码额度")}</small></div><span class="a-badge summary-status"></span></div>
+            <div class="summary-counts"><div class="summary-count"><strong data-summary="total">0</strong><span>#{t("总额度")}</span></div><div class="summary-count"><strong data-summary="used">0</strong><span>#{t("已提取")}</span></div><div class="summary-count"><strong data-summary="remaining">0</strong><span>#{t("剩余")}</span></div></div>
+            <div class="summary-progress"><span style="width:0"></span></div>
+          </div>
+
+          <div class="redeem-result">
+            <div class="result-head"><div><span class="a-badge a-badge-success">#{t("提取成功")}</span> <span class="a-badge a-badge-warning result-repeat" style="display:none">#{t("历史结果")}</span><h5 class="result-product mt-3 mb-1"></h5><div class="result-order"></div></div><div class="text-end mt-1"><strong class="result-quantity"></strong><div class="text-muted small">#{t("本次提取")}</div></div></div>
+            <div class="result-items"></div>
+            <pre class="result-raw"></pre>
+            <div class="result-note"></div>
+            <div class="result-actions"><button type="button" class="btn btn-outline-primary result-copy"><i class="fa-duotone fa-regular fa-copy me-1"></i>#{t("复制全部")}</button><button type="button" class="btn btn-primary result-download"><i class="fa-duotone fa-regular fa-download me-1"></i>#{t("下载 TXT")}</button></div>
+          </div>
+
+          <div class="history-wrap"><div class="d-flex justify-content-between align-items-center mb-3"><h6 class="mb-0"><i class="fa-duotone fa-regular fa-clock-rotate-left me-2"></i>#{t("最近提货记录")}</h6><span class="text-muted small">#{t("最多显示 20 条")}</span></div><div class="history-list"></div><div class="history-empty text-center text-muted py-3" style="display:none">#{t("暂无提货记录")}</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pickup-panel" data-panel-content="query">
+      <div class="panel pickup-card">
+        <div class="panel-body">
+          <div class="pickup-card__title"><span class="pickup-card__title-icon"><i class="fa-duotone fa-regular fa-receipt"></i></span><div><h5 class="mb-1">#{t("订单查询")}</h5><div class="text-muted small">#{t("输入订单号或下单联系方式查看发货结果")}</div></div></div>
+          <form class="order-query-form" autocomplete="off"><label class="pickup-label" for="order-keywords">#{t("订单号 / 联系方式")}</label><div class="query-form-row"><input id="order-keywords" class="form-control query-input" name="keywords" placeholder="#{t('请输入订单号、邮箱或手机号')}" required><button type="submit" class="btn btn-primary query-submit"><i class="fa-duotone fa-regular fa-magnifying-glass me-2"></i>#{t("查询订单")}</button></div></form>
+          <div class="query-state query-loading"><i class="fa-duotone fa-regular fa-spinner-third icon-spin me-2"></i>#{t("正在查询订单...")}</div>
+          <div class="query-state query-empty"><i class="fa-duotone fa-regular fa-box-open d-block mb-2" style="font-size:30px"></i>#{t("未找到相关订单，请检查输入内容")}</div>
+          <div class="order-list"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+#{ready("/assets/user/controller/index/redeem.js")}
+#{include file="./Footer.html"}

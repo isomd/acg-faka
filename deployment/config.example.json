@@ -1,0 +1,17 @@
+{
+  "database": {
+    "host": "mysql.internal",
+    "port": 3306,
+    "database": "acg_faka",
+    "username": "acg_faka",
+    "password": "replace-locally",
+    "prefix": "acg_"
+  },
+  "redis": {
+    "enabled": false,
+    "host": "redis.internal",
+    "port": 6379,
+    "database": 1,
+    "password": ""
+  }
+}

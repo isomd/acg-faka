@@ -299,6 +299,55 @@ CREATE TABLE `__PREFIX__coupon`  (
 ) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC;
 
 
+DROP TABLE IF EXISTS `__PREFIX__redeem_record`;
+DROP TABLE IF EXISTS `__PREFIX__redeem_code`;
+CREATE TABLE `__PREFIX__redeem_code` (
+                                           `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+                                           `code_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '兑换码 HMAC 摘要',
+                                           `code_mask` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '后台显示用掩码',
+                                           `commodity_id` int UNSIGNED NOT NULL COMMENT '商品id',
+                                           `quantity` int UNSIGNED NOT NULL DEFAULT 1 COMMENT '每码可提取总数量',
+                                           `used_quantity` int UNSIGNED NOT NULL DEFAULT 0 COMMENT '已提取数量',
+                                           `status` tinyint UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=可用，1=已用完，2=锁定',
+                                           `order_id` int UNSIGNED NULL DEFAULT NULL COMMENT '最近一次兑换订单id',
+                                           `result_trade_no` char(19) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '兑换订单号快照',
+                                           `result_product_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '商品名称快照',
+                                           `result_secret` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '发货内容快照',
+                                           `result_leave_message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '发货留言快照',
+                                           `batch_no` varchar(32) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL COMMENT '生成/导入批次',
+                                           `note` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+                                           `create_time` datetime NOT NULL,
+                                           `used_time` datetime NULL DEFAULT NULL,
+                                           `used_ip` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+                                           PRIMARY KEY (`id`) USING BTREE,
+                                           UNIQUE INDEX `redeem_code_hash_unique` (`code_hash`) USING BTREE,
+                                           INDEX `redeem_code_commodity_status` (`commodity_id`, `status`) USING BTREE,
+                                           INDEX `redeem_code_order` (`order_id`) USING BTREE,
+                                           INDEX `redeem_code_batch` (`batch_no`) USING BTREE,
+                                           INDEX `redeem_code_create_time` (`create_time`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC;
+
+CREATE TABLE `__PREFIX__redeem_record` (
+                                             `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+                                             `code_id` int UNSIGNED NOT NULL COMMENT '兑换码id',
+                                             `request_token` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '前端请求幂等标识',
+                                             `order_id` int UNSIGNED NOT NULL COMMENT '兑换订单id',
+                                             `trade_no` char(19) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '订单号快照',
+                                             `product_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '商品名称快照',
+                                             `quantity` int UNSIGNED NOT NULL COMMENT '本次提取数量',
+                                             `secret` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '发货内容快照',
+                                             `leave_message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '发货留言快照',
+                                             `used_ip` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+                                             `create_time` datetime NOT NULL,
+                                             PRIMARY KEY (`id`) USING BTREE,
+                                             UNIQUE INDEX `redeem_record_code_request` (`code_id`, `request_token`) USING BTREE,
+                                             UNIQUE INDEX `redeem_record_order` (`order_id`) USING BTREE,
+                                             UNIQUE INDEX `redeem_record_trade_no` (`trade_no`) USING BTREE,
+                                             INDEX `redeem_record_code_id` (`code_id`, `id`) USING BTREE,
+                                             INDEX `redeem_record_create_time` (`create_time`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC;
+
+
 DROP TABLE IF EXISTS `__PREFIX__manage_session`;
 DROP TABLE IF EXISTS `__PREFIX__manage`;
 CREATE TABLE `__PREFIX__manage`  (
@@ -484,8 +533,32 @@ CREATE TABLE `__PREFIX__shared`  (
                                      `currency` varchar(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'CNY' COMMENT '上游站点货币代码',
                                      `currency_rate` decimal(18, 6) NOT NULL DEFAULT 0.000000 COMMENT '结算汇率：1 上游货币 = ? 本站货币；0 = 按站点汇率自动',
                                      `protocol` tinyint UNSIGNED NOT NULL DEFAULT 0 COMMENT '上游协议代次：0=未探明，1=3.1.2+，2=3.1.1及更老',
+                                     `dola_keys` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT 'Dola 提货 KEY，一行一个；仅 type=3 使用',
                                      PRIMARY KEY (`id`) USING BTREE,
                                      UNIQUE INDEX `domain`(`domain` ASC) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC;
+
+
+DROP TABLE IF EXISTS `__PREFIX__dola_pickup_delivery`;
+CREATE TABLE `__PREFIX__dola_pickup_delivery` (
+                                                   `id` int UNSIGNED NOT NULL AUTO_INCREMENT,
+                                                   `shared_id` int UNSIGNED NOT NULL,
+                                                   `request_no` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+                                                   `sequence` int UNSIGNED NOT NULL,
+                                                   `order_quantity` int UNSIGNED NOT NULL,
+                                                   `source_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                                                   `request_tag` varchar(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+                                                   `requested` int UNSIGNED NOT NULL,
+                                                   `before_remaining` int UNSIGNED NOT NULL DEFAULT 0,
+                                                   `before_times` int UNSIGNED NOT NULL DEFAULT 0,
+                                                   `status` tinyint UNSIGNED NOT NULL DEFAULT 0 COMMENT '0=请求中/待恢复，1=已交付',
+                                                   `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+                                                   `error` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+                                                   `create_time` datetime NOT NULL,
+                                                   `update_time` datetime NOT NULL,
+                                                   PRIMARY KEY (`id`) USING BTREE,
+                                                   UNIQUE INDEX `dola_delivery_order_seq` (`shared_id`, `request_no`, `sequence`) USING BTREE,
+                                                   INDEX `dola_delivery_shared_status` (`shared_id`, `status`) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC;
 
 
@@ -767,5 +840,59 @@ CREATE TABLE `__PREFIX__lang` (
                                   UNIQUE INDEX `uk_hash_lang`(`hash` ASC, `lang` ASC) USING BTREE,
                                   INDEX `idx_lang_status`(`lang` ASC, `status` ASC) USING BTREE
 ) ENGINE=InnoDB AUTO_INCREMENT=1 CHARACTER SET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC;
+
+DROP TABLE IF EXISTS `__PREFIX__mercury_webhook_event`;
+DROP TABLE IF EXISTS `__PREFIX__mercury_order`;
+CREATE TABLE `__PREFIX__mercury_order` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tenant_id` varchar(64) NOT NULL,
+  `app_id` varchar(64) NOT NULL,
+  `pay_config_id` int UNSIGNED NOT NULL,
+  `client_order_no` varchar(64) NOT NULL,
+  `local_type` varchar(16) NOT NULL,
+  `local_trade_no` varchar(64) NOT NULL,
+  `user_id` varchar(128) NOT NULL,
+  `sku_code` varchar(128) NOT NULL,
+  `product_name` varchar(255) NOT NULL,
+  `product_type` varchar(64) NOT NULL,
+  `quantity` int UNSIGNED NOT NULL DEFAULT 1,
+  `unit_price` decimal(18,2) NOT NULL,
+  `total_amount` decimal(18,2) NOT NULL,
+  `currency` varchar(8) NOT NULL,
+  `payment_method_code` varchar(128) NOT NULL,
+  `mercury_order_no` varchar(128) NULL DEFAULT NULL,
+  `transaction_no` varchar(128) NULL DEFAULT NULL,
+  `checkout_url` text NULL,
+  `status` varchar(32) NOT NULL,
+  `effect_status` varchar(32) NOT NULL DEFAULT 'PENDING',
+  `create_time` datetime NOT NULL,
+  `update_time` datetime NOT NULL,
+  `paid_time` datetime NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `mercury_order_client_unique` (`tenant_id`,`app_id`,`client_order_no`),
+  UNIQUE KEY `mercury_order_no_unique` (`mercury_order_no`),
+  UNIQUE KEY `mercury_transaction_no_unique` (`transaction_no`),
+  KEY `mercury_order_local` (`local_type`,`local_trade_no`),
+  KEY `mercury_order_config` (`pay_config_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `__PREFIX__mercury_webhook_event` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `event_id` varchar(128) NOT NULL,
+  `tenant_id` varchar(64) NOT NULL,
+  `app_id` varchar(64) NOT NULL,
+  `event_type` varchar(64) NOT NULL,
+  `client_order_no` varchar(64) NULL DEFAULT NULL,
+  `mercury_order_no` varchar(128) NULL DEFAULT NULL,
+  `transaction_no` varchar(128) NULL DEFAULT NULL,
+  `body_hash` char(64) NOT NULL,
+  `status` varchar(32) NOT NULL,
+  `create_time` datetime NOT NULL,
+  `processed_time` datetime NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `mercury_event_id_unique` (`event_id`),
+  KEY `mercury_event_scope_time` (`tenant_id`,`app_id`,`create_time`),
+  KEY `mercury_event_client_order` (`client_order_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

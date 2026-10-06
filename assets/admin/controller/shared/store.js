@@ -2,6 +2,14 @@
     let table, _LogPid, mobileRefreshTimer;
     let connectGeneration = 0;
     const namespace = '.mdSharedStoreController';
+    //Dola 是本站新增的上游协议；字典运行时扩展，避免为一个枚举改写整份压缩公共脚本。
+    if (typeof _Dict !== 'undefined' && Array.isArray(_Dict?.data?._shared_type)
+        && !_Dict.data._shared_type.some(item => Number(item.id) === 3)) {
+        _Dict.data._shared_type.push({
+            id: 3,
+            name: format.badge(i18n('Dola 提货'), 'a-badge-info')
+        });
+    }
     const mobileAdminEnabled = () => Boolean(window.AdminMobile && window.AdminMobile.isEnabled && window.AdminMobile.isEnabled());
     const importStartIcon = '<svg class="md-message-send-icon md-import-start-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8.5 12 4l8 4.5v9L12 22l-8-4.5Z"/><path d="m4 8.5 8 4.5 8-4.5M12 13v9M12 2v7m-3-3 3 3 3-3"/></svg>';
     const bindLayerFocus = ($layer, bringToFront = false) => {
@@ -1338,12 +1346,22 @@
                             title: "商户密钥",
                             name: "app_key",
                             type: "password",
-                            placeholder: editing ? i18n("不修改请留空") : i18n("请输入商户密钥"),
+                            placeholder: editing ? i18n("不修改请留空") : i18n("请输入商户密钥；Dola 协议可留空"),
                             required: !editing,
                             regex: {
                                 value: '^[^\\s\\x00-\\x1F\\x7F]{1,64}$',
                                 message: i18n('商户密钥必须是 1–64 位且不能包含空白字符')
                             }
+                        },
+                        {
+                            title: "Dola 提货 KEY",
+                            name: "dola_keys",
+                            type: "textarea",
+                            placeholder: editing
+                                ? i18n("Dola 协议：不修改请留空；替换时每行一个 KEY 或完整提货链接")
+                                : i18n("仅 Dola 协议填写，每行一个 KEY 或完整提货链接"),
+                            height: 150,
+                            required: false
                         },
                         {
                             title: "对方货币",
@@ -1395,6 +1413,26 @@
                         maxlength: '64'
                     })
                     .val('');
+                const $type = $form.find('[name="type"]');
+                const applyProtocolFields = () => {
+                    const isDola = String($type.val()) === '3';
+                    const $domain = $form.find('input[name="domain"]');
+                    const $appId = $form.find('input[name="app_id"]');
+                    const $appKey = $form.find('input[name="app_key"]');
+                    const $dolaKeys = $form.find('textarea[name="dola_keys"]');
+                    if (isDola) {
+                        if (!$domain.val()) $domain.val('https://ops.czai2.ccwu.cc/pickup');
+                        $appId.val('dola').attr('placeholder', i18n('Dola 协议自动填写'));
+                        if (!$appKey.val()) $appKey.val('DOLA_PICKUP');
+                        if (!editing) $dolaKeys.attr('required', 'required');
+                    } else {
+                        if ($appKey.val() === 'DOLA_PICKUP') $appKey.val('');
+                        $appId.attr('placeholder', i18n('请输入商户ID'));
+                        $dolaKeys.removeAttr('required');
+                    }
+                };
+                $type.on('change', applyProtocolFields);
+                applyProtocolFields();
             }
         });
     }
@@ -1410,6 +1448,10 @@
             field: 'domain', title: '店铺地址', formatter: renderStoreLink
         }, {
             field: 'balance', title: '余额(缓存)', formatter: (v, row) => {
+                if (Number(row?.type) === 3) {
+                    const remaining = Math.max(0, Number.parseInt(v, 10) || 0);
+                    return `<span class="a-badge a-badge-success">${remaining} ${i18n('个可提')}</span>`;
+                }
                 const money = format.money(v, "var(--md-success)");
                 const code = String(row?.currency || 'CNY').toUpperCase();
                 //余额是上游账户的原币数字，标注币种避免误读成本站货币

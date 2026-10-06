@@ -41,6 +41,9 @@ class Store extends Manage
     private \App\Service\Shared $shared;
 
     #[Inject]
+    private \App\Service\Bind\DolaPickup $dolaPickup;
+
+    #[Inject]
     private Image $image;
 
     /**
@@ -806,6 +809,7 @@ class Store extends Manage
             'only_user' => $this->remoteInteger($item, 'only_user', 0, 1),
             'purchase_count' => $this->remoteInteger($item, 'purchase_count', 0, 4294967295),
             'minimum' => $this->remoteInteger($item, 'minimum', 0, 4294967295),
+            'maximum' => $this->remoteInteger($item, 'maximum', 0, 4294967295),
             'stock' => $this->remoteInteger($item, 'stock', 0, 2147483647),
             'widget' => $widget,
             'config' => $config,
@@ -820,6 +824,7 @@ class Store extends Manage
     public function data(): array
     {
         \App\Util\Schema::ensureSharedCurrency();
+        \App\Util\Schema::ensureDolaPickup();
         $map = array_intersect_key($_POST, array_flip([
             'search-name',
             'search-domain',
@@ -889,8 +894,9 @@ class Store extends Manage
     public function save(): array
     {
         \App\Util\Schema::ensureSharedCurrency();
+        \App\Util\Schema::ensureDolaPickup();
         $raw = $_POST;
-        $allowed = ['id', 'type', 'domain', 'app_id', 'app_key', 'currency', 'currency_rate'];
+        $allowed = ['id', 'type', 'domain', 'app_id', 'app_key', 'dola_keys', 'currency', 'currency_rate'];
         foreach (array_keys($raw) as $field) {
             if (!is_string($field) || !in_array($field, $allowed, true)) {
                 throw new JSONException('共享店铺保存请求包含未授权字段');
@@ -904,12 +910,14 @@ class Store extends Manage
         }
 
         $typeValue = $raw['type'] ?? $existing?->type;
-        if (!is_scalar($typeValue) || !preg_match('/^[012]$/D', trim((string)$typeValue))) {
+        if (!is_scalar($typeValue) || !preg_match('/^[0123]$/D', trim((string)$typeValue))) {
             throw new JSONException('共享协议不正确');
         }
         $type = (int)$typeValue;
         $domain = $this->sharedDomain($raw['domain'] ?? $existing?->domain);
-        $appId = $this->sharedAppId($raw['app_id'] ?? $existing?->app_id);
+        $appId = $type === 3
+            ? 'dola'
+            : $this->sharedAppId($raw['app_id'] ?? $existing?->app_id);
 
         $currency = $this->sharedCurrency($raw['currency'] ?? $existing?->currency);
         $currencyRate = $this->sharedCurrencyRate($raw['currency_rate'] ?? $existing?->currency_rate);
@@ -926,11 +934,35 @@ class Store extends Manage
         if (!is_scalar($newAppKey)) {
             throw new JSONException('商户密钥格式不正确');
         }
-        // An empty secret on edit is an explicit keep-existing operation. The
-        // current secret is only read on the server and is never sent to JS.
-        $appKey = (string)$newAppKey === '' && $existing
-            ? (string)$existing->app_key
-            : $this->sharedAppKey($newAppKey);
+        $newDolaKeys = $raw['dola_keys'] ?? '';
+        if (!is_scalar($newDolaKeys)) {
+            throw new JSONException('Dola 提货 KEY 格式不正确');
+        }
+        if ($type === 3) {
+            try {
+                $dolaSchemaReady = \App\Util\Schema::tableExists('dola_pickup_delivery')
+                    && DB::schema()->hasColumn('shared', 'dola_keys')
+                    && DB::schema()->hasColumn('dola_pickup_delivery', 'order_quantity');
+            } catch (\Throwable) {
+                $dolaSchemaReady = false;
+            }
+            if (!$dolaSchemaReady) {
+                throw new JSONException('Dola 提货记录表创建失败，请检查数据库 CREATE/ALTER 权限');
+            }
+            $appKey = 'DOLA_PICKUP';
+            $dolaKeys = trim((string)$newDolaKeys) === '' && $existing && (int)$existing->type === 3
+                ? (string)($existing->dola_keys ?? '')
+                : $this->dolaPickup->normalizeKeys((string)$newDolaKeys);
+            //保留旧配置也必须重新校验，避免升级前的脏数据被直接带入自动发货链路。
+            $dolaKeys = $this->dolaPickup->normalizeKeys($dolaKeys);
+        } else {
+            // An empty secret on edit is an explicit keep-existing operation. The
+            // current secret is only read on the server and is never sent to JS.
+            $appKey = (string)$newAppKey === '' && $existing
+                ? (string)$existing->app_key
+                : $this->sharedAppKey($newAppKey);
+            $dolaKeys = null;
+        }
 
         $duplicate = Shared::query()->where('domain', $domain);
         if ($id > 0) {
@@ -944,7 +976,7 @@ class Store extends Manage
         // Use a generic failure message so a hostile remote response cannot echo
         // the submitted credential into JSON or DEBUG output.
         try {
-            $connect = $this->shared->connect($domain, $appId, $appKey, $type);
+            $connect = $this->shared->connect($domain, $appId, $type === 3 ? $dolaKeys : $appKey, $type);
         } catch (\Throwable) {
             throw new JSONException('连接失败，请检查店铺地址、共享协议和商户凭据');
         }
@@ -961,6 +993,7 @@ class Store extends Manage
         $store->domain = $domain;
         $store->app_id = $appId;
         $store->app_key = $appKey;
+        $store->dola_keys = $dolaKeys;
         $store->name = $identity['name'];
         $store->balance = $identity['balance'];
         $store->currency = $currency;
@@ -988,6 +1021,7 @@ class Store extends Manage
      */
     public function connect(): array
     {
+        \App\Util\Schema::ensureDolaPickup();
         $id = $this->sharedId($_POST['id'] ?? null);
         if ($id < 1) {
             throw new JSONException('共享店铺 ID 格式不正确');
@@ -998,7 +1032,8 @@ class Store extends Manage
             throw new JSONException("未找到该店铺");
         }
         try {
-            $connect = $this->shared->connect($shared->domain, $shared->app_id, $shared->app_key, $shared->type);
+            $credential = (int)$shared->type === 3 ? (string)($shared->dola_keys ?? '') : (string)$shared->app_key;
+            $connect = $this->shared->connect($shared->domain, $shared->app_id, $credential, $shared->type);
         } catch (\Throwable) {
             throw new JSONException('连接失败，请检查店铺地址、共享协议和商户凭据');
         }
@@ -1017,6 +1052,7 @@ class Store extends Manage
      */
     public function items(): array
     {
+        \App\Util\Schema::ensureDolaPickup();
         $id = $this->sharedId($_POST['id'] ?? null);
         if ($id < 1) {
             throw new JSONException('共享店铺 ID 格式不正确');
@@ -1213,6 +1249,7 @@ class Store extends Manage
                 $commodity->purchase_count = $item['purchase_count'];
                 $commodity->widget = $item['widget'];
                 $commodity->minimum = $item['minimum'];
+                $commodity->maximum = $item['maximum'];
                 $commodity->stock = $item['stock'];
 
                 //自动加价

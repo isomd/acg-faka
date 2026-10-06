@@ -105,6 +105,11 @@ if (!function_exists("config")) {
         if ($data) {
             return $data;
         }
+        if ($name === 'database' && \Kernel\Util\EncryptedDeploymentConfig::enabled()) {
+            $data = \Kernel\Util\EncryptedDeploymentConfig::database();
+            \Kernel\Util\Context::set("config_" . $name, $data);
+            return $data;
+        }
         $file = BASE_PATH . '/config/' . $name . ".php";
         if (!file_exists($file)) {
             return [];

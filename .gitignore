@@ -1,0 +1,8 @@
+/config/database.php
+/config/store.php
+/config/mcp.php
+/kernel/Install/Lock
+/runtime/
+/assets/cache/
+/deployment/database.enc.json.local
+/.idea/

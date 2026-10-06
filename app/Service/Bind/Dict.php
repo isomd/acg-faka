@@ -34,7 +34,7 @@ class Dict implements \App\Service\Dict
         'business_level' => ['id', 'name'],
         'pay' => ['id', 'name'],
         'price_template' => ['id', 'name'],
-        'shared' => ['id', 'name'],
+        'shared' => ['id', 'name', 'type'],
     ];
 
     /** 条件里放行的比较运算符 */

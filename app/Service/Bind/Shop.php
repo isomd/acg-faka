@@ -273,6 +273,11 @@ class Shop implements \App\Service\Shop
         if (($hook = \hook(Hook::SERVICE_SHOP_GET_ITEM_STOCK, $commodity, $race, $sku)) instanceof Stock) return $hook->getStock();
 
         if ($commodity->shared) {
+            //Dola 的 KEY 也可能在上游页面被人工提货；永久 shared_stock 缓存会把已经扣掉的号继续当库存卖。
+            //它的只读查询成本很低，直接回源保证下单前看到的是当前 remaining。
+            if ((int)$commodity->shared->type === 3) {
+                return $this->shared->getItemStock((clone $commodity), $commodity->shared, $commodity->shared_code, $race, $sku);
+            }
             return $this->getSharedStock($commodity, $race, $sku);
         } else if ($commodity->delivery_way == 0) {
             $card = Card::query()->where("commodity_id", $commodity->id)->where("status", 0);

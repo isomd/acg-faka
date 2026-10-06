@@ -182,6 +182,14 @@ if (!function_exists("user_header_nav")) {
                 "target" => "_self",
                 "match" => "/user/index/query",
             ],
+            "redeem" => [
+                "name" => lang("兑换码提货", "tpl"),
+                "url" => "/user/index/redeem",
+                "icon" => "fa-duotone fa-regular fa-gift-card",
+                "micon" => "redeem",
+                "target" => "_self",
+                "match" => "/user/index/redeem",
+            ],
         ];
 
         $items = [];

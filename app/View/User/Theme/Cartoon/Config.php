@@ -42,6 +42,7 @@ interface Config
         "INDEX" => "Index/Index.html", //卡网首页
         "CLOSED" => "Index/Closed.html", //维护页面
         "QUERY" => "Index/Query.html", //订单查询
+        "REDEEM" => "Index/Redeem.html", //兑换码提货
         "LOGIN" => "Authentication/Login.html", //用户登录
         "REGISTER" => "Authentication/Register.html", //用户注册
         "FORGET_EMAIL" => "Authentication/ForgetEmail.html", //用户找回密码-邮箱

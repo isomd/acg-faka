@@ -28,6 +28,10 @@ define("BASE_APP_SERVER", match ((int)config("store")['server']) {
 });
 define("APP_VERSION", config('app')['version']);
 
+if (\Kernel\Util\EncryptedDeploymentConfig::enabled()) {
+    \Kernel\Util\EncryptedDeploymentConfig::configureSession();
+}
+
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',

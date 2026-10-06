@@ -113,9 +113,11 @@ COPY docker/acg-ssl-import.sh /usr/local/bin/acg-ssl-import
 COPY docker/acg-ssl-renew.sh  /usr/local/bin/acg-ssl-renew
 
 COPY . ${ACG_HOME}
+COPY deployment/ /opt/acg-faka/
 
 # config/database.php 被 .dockerignore 排除在构建上下文之外（构建机上那份含真实凭证），
-# 这里重新写一份空模板：安装向导跑完会把用户填的信息覆盖进去。
+# 这里重新写一份空模板：常规安装向导可填入；加密部署模式只从密文读取，
+# 安装向导不会把数据库凭据回写到该文件。
 RUN set -eux; \
     mkdir -p \
         /usr/local/share/acg-faka \

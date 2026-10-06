@@ -97,4 +97,13 @@ class Index extends User
     {
         return $this->theme("订单查询", "QUERY", "Index/Query.html", ['user' => $this->getUser(), 'tradeNo' => (string)$_GET['tradeNo']]);
     }
+
+    /**
+     * 兑换码提货入口。
+     */
+    public function redeem(): string
+    {
+        \App\Util\Schema::ensureRedeemCode();
+        return $this->theme('兑换码提货', 'REDEEM', 'Index/Redeem.html', ['user' => $this->getUser()]);
+    }
 }

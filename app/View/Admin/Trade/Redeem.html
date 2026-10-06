@@ -1,0 +1,65 @@
+#{include file="../Header.html"}
+<div class="content d-flex flex-column flex-column-fluid" id="kt_content">
+  #{include file="../Toolbar.html"}
+  <div class="post d-flex flex-column-fluid" id="kt_post">
+    <div id="kt_content_container" class="container-fluid">
+      <div class="d-flex flex-wrap gap-3 mb-5">
+        <a class="btn btn-sm btn-light-primary" href="/admin/commodity/index"><i class="fa-duotone fa-regular fa-box-open"></i> #{t("商品管理")}</a>
+        <a class="btn btn-sm btn-light-primary" href="/admin/order/index"><i class="fa-duotone fa-regular fa-receipt"></i> #{t("商品订单")}</a>
+        #{if $user.type == 0}<a class="btn btn-sm btn-light-primary" href="/admin/store/index"><i class="fa-duotone fa-regular fa-share-nodes"></i> #{t("店铺共享")}</a>#{/if}
+        <a class="btn btn-sm btn-light-info" href="/user/index/redeem" target="_blank" rel="noopener"><i class="fa-duotone fa-regular fa-arrow-up-right-from-square"></i> #{t("打开用户提货入口")}</a>
+      </div>
+
+      <ul class="nav nav-tabs nav-line-tabs nav-line-tabs-2x fs-6 mb-5" role="tablist">
+        <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#redeem-user-pane" type="button" role="tab"><i class="fa-duotone fa-regular fa-ticket me-2"></i>#{t("用户兑换码")}</button></li>
+        #{if $user.type == 0}
+        <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#redeem-dola-source-pane" type="button" role="tab"><i class="fa-duotone fa-regular fa-key me-2"></i>#{t("Dola 上游 KEY")}</button></li>
+        <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#redeem-dola-delivery-pane" type="button" role="tab"><i class="fa-duotone fa-regular fa-truck-fast me-2"></i>#{t("Dola 提货记录")}</button></li>
+        #{/if}
+      </ul>
+
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="redeem-user-pane" role="tabpanel">
+          <div class="alert alert-primary d-flex align-items-center mb-5"><i class="fa-duotone fa-regular fa-shield-keyhole fs-2 me-3"></i><div>#{t("这里管理发给用户的兑换码。系统只保存不可逆摘要；新生成的明文码请立即复制或下载，后台之后无法恢复。")}</div></div>
+          <div class="card mb-5 mb-xl-8">
+            <div class="card-header border-0">
+              <div class="card-toolbar">
+                <button class="btn btn-sm btn-light-primary btn-redeem-generate me-3"><i class="fa-duotone fa-regular fa-wand-magic-sparkles"></i> #{t("生成兑换码")}</button>
+                <button class="btn btn-sm btn-light-primary btn-redeem-import me-3"><i class="fa-duotone fa-regular fa-file-import"></i> #{t("导入兑换码")}</button>
+                <button class="btn btn-sm btn-light-dark btn-redeem-lock me-3"><i class="fa-duotone fa-regular fa-lock"></i> #{t("锁定")}</button>
+                <button class="btn btn-sm btn-light-success btn-redeem-unlock me-3"><i class="fa-duotone fa-regular fa-lock-open"></i> #{t("解锁")}</button>
+                <button class="btn btn-sm btn-light-danger btn-redeem-delete me-3"><i class="fa-duotone fa-regular fa-trash-can"></i> #{t("删除无记录码")}</button>
+              </div>
+            </div>
+            <div class="card-body py-3"><table id="redeem-table"></table></div>
+          </div>
+        </div>
+
+        #{if $user.type == 0}
+        <div class="tab-pane fade" id="redeem-dola-source-pane" role="tabpanel">
+          <div class="alert alert-info d-flex align-items-center mb-5"><i class="fa-duotone fa-regular fa-circle-info fs-2 me-3"></i><div>#{t("这里管理上游提货 KEY。列表只显示掩码；刷新状态仅查询库存，不会执行提货。存在待恢复批次的 KEY 不允许移除。")}</div></div>
+          <div class="card mb-5 mb-xl-8">
+            <div class="card-header border-0"><div class="card-toolbar">
+              <button class="btn btn-sm btn-light-primary btn-dola-source-add me-3"><i class="fa-duotone fa-regular fa-plus"></i> #{t("添加上游 KEY")}</button>
+              <button class="btn btn-sm btn-light-info btn-dola-source-refresh"><i class="fa-duotone fa-regular fa-arrows-rotate"></i> #{t("刷新实时库存")}</button>
+            </div></div>
+            <div class="card-body py-3"><table id="dola-source-table"></table></div>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="redeem-dola-delivery-pane" role="tabpanel">
+          <div class="alert alert-warning d-flex align-items-center mb-5"><i class="fa-duotone fa-regular fa-database fs-2 me-3"></i><div>#{t("这里展示每个实际向上游提货的批次。账号内容默认隐藏，仅在点击查看时按单条读取，并且不会被浏览器缓存。")}</div></div>
+          <div class="card mb-5 mb-xl-8">
+            <div class="card-header border-0"><div class="card-toolbar">
+              <button class="btn btn-sm btn-light-info btn-dola-delivery-refresh"><i class="fa-duotone fa-regular fa-arrows-rotate"></i> #{t("刷新提货记录")}</button>
+            </div></div>
+            <div class="card-body py-3"><table id="dola-delivery-table"></table></div>
+          </div>
+        </div>
+        #{/if}
+      </div>
+    </div>
+  </div>
+</div>
+#{ready("/assets/admin/controller/trade/redeem.js?rev=dola-admin-v2")}
+#{include file="../Footer.html"}

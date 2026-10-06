@@ -17,7 +17,7 @@ use Kernel\Util\View;
 abstract class User extends \App\Controller\Base\User
 {
     protected array $indexTemplateList = [
-        'INDEX', 'ITEM', 'QUERY', 'CLOSED'
+        'INDEX', 'ITEM', 'QUERY', 'REDEEM', 'CLOSED'
     ];
 
     private const TRANSLATABLE_CONFIG = ['notice', 'shop_name', 'title', 'closed_message', 'commodity_name'];

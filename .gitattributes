@@ -2,3 +2,6 @@
 *.css linguist-language=php
 *.html linguist-language=php
 *.php linguist-language=php
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

@@ -89,6 +89,250 @@ final class Schema
         });
     }
 
+    /**
+     * Dola 分批提货协议。
+     *
+     * 多个 KEY 不能塞进 shared.app_key(varchar(64))，单独放在不参与列表序列化的 TEXT 列；
+     * delivery 表保存每个订单已经从上游提过的批次，支付回调重放时据此保证不重复扣货。
+     */
+    public static function ensureDolaPickup(): void
+    {
+        self::ensureColumn('shared', 'dola_keys', static function (Blueprint $table): void {
+            $table->text('dola_keys')->nullable()->comment('Dola 提货 KEY，一行一个；仅 type=3 使用');
+        });
+
+        if (self::tableExists('dola_pickup_delivery')) {
+            self::ensureColumn('dola_pickup_delivery', 'order_quantity', static function (Blueprint $table): void {
+                $table->unsignedInteger('order_quantity')->default(0)->after('sequence');
+            });
+            return;
+        }
+
+        try {
+            Manager::schema()->create('dola_pickup_delivery', static function (Blueprint $table): void {
+                $table->increments('id');
+                $table->unsignedInteger('shared_id');
+                $table->string('request_no', 64);
+                $table->unsignedInteger('sequence');
+                $table->unsignedInteger('order_quantity');
+                $table->char('source_hash', 64);
+                $table->string('request_tag', 96);
+                $table->unsignedInteger('requested');
+                $table->unsignedInteger('before_remaining')->default(0);
+                $table->unsignedInteger('before_times')->default(0);
+                $table->unsignedTinyInteger('status')->default(0);
+                $table->longText('payload')->nullable();
+                $table->string('error', 255)->nullable();
+                $table->dateTime('create_time');
+                $table->dateTime('update_time');
+                $table->unique(['shared_id', 'request_no', 'sequence'], 'dola_delivery_order_seq');
+                $table->index(['shared_id', 'status'], 'dola_delivery_shared_status');
+            });
+            self::$tableKnown['dola_pickup_delivery'] = true;
+            if (!is_dir(self::MARK_DIR)) {
+                @mkdir(self::MARK_DIR, 0755, true);
+            }
+            @file_put_contents(self::MARK_DIR . '/table_dola_pickup_delivery', (string)time());
+        } catch (\Throwable $e) {
+            //保存 Dola 货源时还会实际写表；没有 CREATE 权限会在那里给出明确失败，而不是拖到付款后。
+        }
+    }
+
+    /**
+     * 兑换码提货。码本体只以 HMAC 摘要保存，明文仅在生成/导入响应中出现。
+     */
+    public static function ensureRedeemCode(): void
+    {
+        if (self::tableExists('redeem_code')) {
+            self::ensureRedeemResultColumns();
+            self::ensureRedeemRecord();
+            return;
+        }
+
+        try {
+            Manager::schema()->create('redeem_code', static function (Blueprint $table): void {
+                $table->increments('id');
+                $table->char('code_hash', 64)->unique('redeem_code_hash_unique');
+                $table->string('code_mask', 64);
+                $table->unsignedInteger('commodity_id');
+                $table->unsignedInteger('quantity')->default(1);
+                $table->unsignedInteger('used_quantity')->default(0);
+                $table->unsignedTinyInteger('status')->default(0);
+                $table->unsignedInteger('order_id')->nullable();
+                $table->char('result_trade_no', 19)->nullable();
+                $table->string('result_product_name', 255)->nullable();
+                $table->longText('result_secret')->nullable();
+                $table->text('result_leave_message')->nullable();
+                $table->string('batch_no', 32)->nullable();
+                $table->string('note', 64)->nullable();
+                $table->dateTime('create_time');
+                $table->dateTime('used_time')->nullable();
+                $table->string('used_ip', 64)->nullable();
+                $table->index(['commodity_id', 'status'], 'redeem_code_commodity_status');
+                $table->index('order_id', 'redeem_code_order');
+                $table->index('batch_no', 'redeem_code_batch');
+                $table->index('create_time', 'redeem_code_create_time');
+            });
+            self::$tableKnown['redeem_code'] = true;
+            if (!is_dir(self::MARK_DIR)) {
+                @mkdir(self::MARK_DIR, 0755, true);
+            }
+            @file_put_contents(self::MARK_DIR . '/table_redeem_code', (string)time());
+            self::ensureRedeemRecord();
+        } catch (\Throwable) {
+            //业务入口会再次查询该表并给出真实数据库错误；这里保持与其他升级自愈逻辑一致。
+        }
+    }
+
+    /**
+     * Mercury 下单快照与 Webhook 幂等账本。
+     *
+     * 两张表必须使用 InnoDB：支付效果、事件消费和本地订单状态需要处于同一事务。
+     */
+    public static function ensureMercuryPayment(): void
+    {
+        if (!self::tableExists('mercury_order')) {
+            try {
+                Manager::schema()->create('mercury_order', static function (Blueprint $table): void {
+                    $table->bigIncrements('id');
+                    $table->string('tenant_id', 64);
+                    $table->string('app_id', 64);
+                    $table->unsignedInteger('pay_config_id');
+                    $table->string('client_order_no', 64);
+                    $table->string('local_type', 16);
+                    $table->string('local_trade_no', 64);
+                    $table->string('user_id', 128);
+                    $table->string('sku_code', 128);
+                    $table->string('product_name', 255);
+                    $table->string('product_type', 64);
+                    $table->unsignedInteger('quantity')->default(1);
+                    $table->decimal('unit_price', 18, 2);
+                    $table->decimal('total_amount', 18, 2);
+                    $table->string('currency', 8);
+                    $table->string('payment_method_code', 128);
+                    $table->string('mercury_order_no', 128)->nullable();
+                    $table->string('transaction_no', 128)->nullable();
+                    $table->text('checkout_url')->nullable();
+                    $table->string('status', 32);
+                    $table->string('effect_status', 32)->default('PENDING');
+                    $table->dateTime('create_time');
+                    $table->dateTime('update_time');
+                    $table->dateTime('paid_time')->nullable();
+                    $table->unique(['tenant_id', 'app_id', 'client_order_no'], 'mercury_order_client_unique');
+                    $table->unique('mercury_order_no', 'mercury_order_no_unique');
+                    $table->unique('transaction_no', 'mercury_transaction_no_unique');
+                    $table->index(['local_type', 'local_trade_no'], 'mercury_order_local');
+                    $table->index('pay_config_id', 'mercury_order_config');
+                });
+                self::$tableKnown['mercury_order'] = true;
+            } catch (\Throwable) {
+                // 实际下单会明确暴露表不存在或无 CREATE 权限，不能退回无幂等处理。
+            }
+        }
+
+        if (!self::tableExists('mercury_webhook_event')) {
+            try {
+                Manager::schema()->create('mercury_webhook_event', static function (Blueprint $table): void {
+                    $table->bigIncrements('id');
+                    $table->string('event_id', 128)->unique('mercury_event_id_unique');
+                    $table->string('tenant_id', 64);
+                    $table->string('app_id', 64);
+                    $table->string('event_type', 64);
+                    $table->string('client_order_no', 64)->nullable();
+                    $table->string('mercury_order_no', 128)->nullable();
+                    $table->string('transaction_no', 128)->nullable();
+                    $table->char('body_hash', 64);
+                    $table->string('status', 32);
+                    $table->dateTime('create_time');
+                    $table->dateTime('processed_time')->nullable();
+                    $table->index(['tenant_id', 'app_id', 'create_time'], 'mercury_event_scope_time');
+                    $table->index('client_order_no', 'mercury_event_client_order');
+                });
+                self::$tableKnown['mercury_webhook_event'] = true;
+            } catch (\Throwable) {
+                // 同上：Webhook 必须持久化去重，缺表时应失败并让 Mercury 重试。
+            }
+        }
+
+        if (!is_dir(self::MARK_DIR)) {
+            @mkdir(self::MARK_DIR, 0755, true);
+        }
+        self::tableExists('mercury_order') && @file_put_contents(self::MARK_DIR . '/table_mercury_order', (string)time());
+        self::tableExists('mercury_webhook_event') && @file_put_contents(self::MARK_DIR . '/table_mercury_webhook_event', (string)time());
+    }
+
+    private static function ensureRedeemResultColumns(): void
+    {
+        self::ensureColumn('redeem_code', 'used_quantity', static function (Blueprint $table): void {
+            $table->unsignedInteger('used_quantity')->default(0)->after('quantity');
+        });
+        self::ensureColumn('redeem_code', 'result_trade_no', static function (Blueprint $table): void {
+            $table->char('result_trade_no', 19)->nullable()->after('order_id');
+        });
+        self::ensureColumn('redeem_code', 'result_product_name', static function (Blueprint $table): void {
+            $table->string('result_product_name', 255)->nullable()->after('result_trade_no');
+        });
+        self::ensureColumn('redeem_code', 'result_secret', static function (Blueprint $table): void {
+            $table->longText('result_secret')->nullable()->after('result_product_name');
+        });
+        self::ensureColumn('redeem_code', 'result_leave_message', static function (Blueprint $table): void {
+            $table->text('result_leave_message')->nullable()->after('result_secret');
+        });
+
+        // 老版本的 status=1 代表整码已经一次性提完。补列后把它折算成已用额度，
+        // 防止升级后旧码被误判为还有余额。
+        $backfillMark = self::MARK_DIR . '/redeem_code_used_quantity_backfill';
+        try {
+            if (!is_file($backfillMark)) {
+                Manager::table('redeem_code')
+                    ->where('status', 1)
+                    ->where('used_quantity', 0)
+                    ->whereNotNull('result_trade_no')
+                    ->update(['used_quantity' => Manager::raw('quantity')]);
+                if (!is_dir(self::MARK_DIR)) {
+                    @mkdir(self::MARK_DIR, 0755, true);
+                }
+                @file_put_contents($backfillMark, (string)time());
+            }
+        } catch (\Throwable) {
+        }
+    }
+
+    private static function ensureRedeemRecord(): void
+    {
+        if (self::tableExists('redeem_record')) {
+            return;
+        }
+
+        try {
+            Manager::schema()->create('redeem_record', static function (Blueprint $table): void {
+                $table->bigIncrements('id');
+                $table->unsignedInteger('code_id');
+                $table->string('request_token', 64);
+                $table->unsignedInteger('order_id');
+                $table->char('trade_no', 19);
+                $table->string('product_name', 255);
+                $table->unsignedInteger('quantity');
+                $table->longText('secret');
+                $table->text('leave_message')->nullable();
+                $table->string('used_ip', 64);
+                $table->dateTime('create_time');
+                $table->unique(['code_id', 'request_token'], 'redeem_record_code_request');
+                $table->unique('order_id', 'redeem_record_order');
+                $table->unique('trade_no', 'redeem_record_trade_no');
+                $table->index(['code_id', 'id'], 'redeem_record_code_id');
+                $table->index('create_time', 'redeem_record_create_time');
+            });
+            self::$tableKnown['redeem_record'] = true;
+            if (!is_dir(self::MARK_DIR)) {
+                @mkdir(self::MARK_DIR, 0755, true);
+            }
+            @file_put_contents(self::MARK_DIR . '/table_redeem_record', (string)time());
+        } catch (\Throwable) {
+            // 与兑换码主表一致：没有 CREATE 权限时让实际业务查询给出数据库错误。
+        }
+    }
+
     /** @var array<string, bool> 本次请求内已确认过的表 */
     private static array $tableKnown = [];
 

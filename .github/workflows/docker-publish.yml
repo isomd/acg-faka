@@ -7,10 +7,8 @@
 name: 发布 Docker 镜像
 
 on:
-  push:
-    # 版本 tag 是裸 semver（3.7.1），没有 v 前缀
-    tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+  # 当前项目的版本标签由 deploy-production.yml 构建和部署。
+  # 此上游流水线仅保留手动入口，避免同一标签重复发布。
   workflow_dispatch:
     inputs:
       version:

@@ -15,6 +15,25 @@ for name in config install assets_cache plugins pay themes runtime; do
     fi
 done
 
+# 内置代码跟随镜像升级；用户安装的额外支付插件、插件和主题仍留在 /data。
+# 数据库凭据文件与安装锁绝不从镜像覆盖。
+if [ -d "${SKEL}/pay/Mercury" ]; then
+    mkdir -p "${DATA}/pay/Mercury"
+    cp -a "${SKEL}/pay/Mercury/." "${DATA}/pay/Mercury/"
+fi
+if [ -d "${SKEL}/themes/Cartoon" ]; then
+    mkdir -p "${DATA}/themes/Cartoon"
+    cp -a "${SKEL}/themes/Cartoon/." "${DATA}/themes/Cartoon/"
+fi
+for name in app.php dependencies.php; do
+    if [ -f "${SKEL}/config/${name}" ]; then
+        cp "${SKEL}/config/${name}" "${DATA}/config/${name}"
+    fi
+done
+if [ -f "${SKEL}/install/Install.sql" ]; then
+    cp "${SKEL}/install/Install.sql" "${DATA}/install/Install.sql"
+fi
+
 mkdir -p \
     "${DATA}/runtime/log" "${DATA}/runtime/plugin" "${DATA}/runtime/request" \
     "${DATA}/runtime/tmp" "${DATA}/runtime/view" "${DATA}/runtime/waf" "${DATA}/runtime/session" \
@@ -48,7 +67,7 @@ chown -R www-data:www-data \
 # 用户自己给了 ACG_DB_HOST（compose 里指向 mysql 服务，或者手工接外部库）就用他的，
 # 什么都没给就启动镜像自带的 MariaDB + Redis —— 单容器 docker run 也能全自动。
 BUNDLED=0
-if [ -z "${ACG_DB_HOST:-}" ]; then
+if [ -z "${ACG_DB_HOST:-}" ] && [ -z "${ACG_ENCRYPTED_CONFIG:-}" ]; then
     BUNDLED=1
 fi
 
@@ -149,7 +168,14 @@ fi
 # 有 redis 就用 redis，没有退回文件。写死在 php.ini 里的话，没有 redis 的环境
 # session_start() 会直接失败 —— 安装向导不开 session 所以看不出来，一登录后台就炸。
 SESSION_INI=/usr/local/etc/php/conf.d/zz-acg-session.ini
-if [ -n "${ACG_REDIS_HOST:-}" ]; then
+if [ -n "${ACG_ENCRYPTED_CONFIG:-}" ]; then
+    [ -r "${ACG_CONFIG_KEY_FILE:-}" ] || { echo '缺少部署配置密钥文件' >&2; exit 1; }
+    [ -r "${ACG_ENCRYPTED_CONFIG}" ] || { echo '缺少加密部署配置文件' >&2; exit 1; }
+    install -m 0400 -o www-data -g www-data "${ACG_CONFIG_KEY_FILE}" /run/acg-config-key
+    export ACG_CONFIG_KEY_FILE=/run/acg-config-key
+    printf 'session.save_handler = files\nsession.save_path = "/var/www/html/runtime/session"\n' > "${SESSION_INI}"
+    php -r 'require "/var/www/html/vendor/autoload.php"; \Kernel\Util\EncryptedDeploymentConfig::database();' >/dev/null
+elif [ -n "${ACG_REDIS_HOST:-}" ]; then
     printf 'session.save_handler = redis\nsession.save_path = "tcp://%s:%s?database=%s&prefix=acg_sess:"\n' \
         "${ACG_REDIS_HOST}" "${ACG_REDIS_PORT:-6379}" "${ACG_REDIS_DB:-1}" > "${SESSION_INI}"
 else

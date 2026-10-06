@@ -1,0 +1,9 @@
+{
+    "version": 1,
+    "cipher": "aes-256-gcm",
+    "kdf": "pbkdf2-sha256",
+    "salt": "qVCxJNTLpW4yYdECqkuJlQ==",
+    "nonce": "2vKjGQ2E8LHDFypO",
+    "tag": "C2s0bf02rClTryzefBT0vw==",
+    "data": "lGEF94gWyqhrUpK/3mbh6Z5+gfwwGzBzwmMNakzcjIhFNBK+NrqK9y7WlPwNOPySbdp28cc940DMvYCEw+dnzHx0OGZBcQvx3Erw+IyF6Pw4C0cyEfwkWUjjA9NkYEb1clH7IoXlT5Sv8kinmsqk9c7RxlnTXcwtVzLsLuFzRzAJiGEkHOUCed5ByLw4HrrvMURgdyQg2cVhnpo9o7J8HMQh93p0wRivlj79jTEnea1NE4mmG6ft/UH9yBh6e3V0fIzglcxGOurLkQmQqAJspsHDUjJm0kgdAVn8aVPeN00nhKnT1hcE/k2NjhZAUFDouu8="
+}

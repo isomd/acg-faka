@@ -7,7 +7,22 @@
     let _price = 0, _available = false;
     //抢购结束后付款区被收起，切换SKU重新查库存时不能把它又打开
     let _seckillEnded = false;
+    //本页在拿到成功响应前始终沿用请求号。若已发生部分提货，即使用户改了数量，
+    //服务端也能识别为同一尝试并拒绝悄悄另开一单，避免已提账号变成孤儿批次。
+    //Dola 用它从独立提货账本恢复“上游已扣货、本地订单事务却回滚”的批次。
+    let _pendingRequestNo = '';
     const $vstack = $(`.vstack`), $cashPay = $(`.cash-pay`);
+
+    function _newRequestNo() {
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
+        const bytes = new Uint8Array(19);
+        if (window.crypto?.getRandomValues) {
+            window.crypto.getRandomValues(bytes);
+        } else {
+            for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+        }
+        return Array.from(bytes, value => alphabet[value % alphabet.length]).join('');
+    }
 
     function _getPostData() {
         let post = util.arrayToObject($vstack.serializeArray());
@@ -129,6 +144,10 @@
     function _ChangeNum() {
         const $input = $(`input[name=num]`);
 
+        // 浏览器可能在刷新或返回商品页时恢复旧表单值。估价属于实时业务数据，
+        // 不能拿陈旧数量（例如上次输入的 1000）作为本次页面的初始数量。
+        $input.val(_item.minimum > 0 ? _item.minimum : 1);
+
         $input.on('change', function () {
             if (_item.minimum > 0 && $(this).val() < _item.minimum) {
                 $(this).val(_item.minimum);
@@ -224,7 +243,10 @@
         $(document).on("click", `.pay-list .pay`, function () {
             let post = _getPostData();
             post["pay_id"] = $(this).data("id");
+            if (!_pendingRequestNo) _pendingRequestNo = _newRequestNo();
+            post["request_no"] = _pendingRequestNo;
             util.post("/user/api/order/trade", post, res => {
+                _pendingRequestNo = '';
                 if (post["pay_id"] == 1) {
                     //余额购买，直接反馈
                     treasure.show(res.data.tradeNo, res.data.secret, res.data.leave_message);

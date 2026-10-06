@@ -22,6 +22,18 @@ class Shared implements \App\Service\Shared
     #[Inject]
     private Client $http;
 
+    #[Inject]
+    private DolaPickup $dolaPickup;
+
+    private function dolaKeys(\App\Model\Shared $shared): string
+    {
+        $keys = trim((string)($shared->dola_keys ?? ''));
+        if ($keys === '') {
+            throw new JSONException('Dola 货源尚未配置提货 KEY');
+        }
+        return $keys;
+    }
+
     public function mcyRequest(string $url, string $appId, string $appKey, array $data = []): array
     {
         try {
@@ -164,6 +176,9 @@ class Shared implements \App\Service\Shared
 
     public function connect(string $domain, string $appId, string $appKey, int $type = 0): ?array
     {
+        if ($type === 3) {
+            return $this->dolaPickup->connect($domain, $appKey);
+        }
         if ($type == 1) {
             $data = $this->mcyRequest($domain . "/plugin/open-api/connect", $appId, $appKey);
             return ["shopName" => $data['username'], "balance" => $data['balance']];
@@ -235,6 +250,10 @@ class Shared implements \App\Service\Shared
 
     public function items(\App\Model\Shared $shared): ?array
     {
+        if ((int)$shared->type === 3) {
+            \App\Util\Schema::ensureDolaPickup();
+            return $this->dolaPickup->items((string)$shared->domain, $this->dolaKeys($shared));
+        }
         $factor = SharedCurrency::factor($shared);
 
         if ($shared->type == 1) {
@@ -311,6 +330,13 @@ class Shared implements \App\Service\Shared
 
     public function item(\App\Model\Shared $shared, string $code): array
     {
+        if ((int)$shared->type === 3) {
+            \App\Util\Schema::ensureDolaPickup();
+            if ($code !== 'dola-account') {
+                throw new JSONException('Dola 商品编号不正确');
+            }
+            return $this->dolaPickup->item((string)$shared->domain, $this->dolaKeys($shared));
+        }
         $factor = SharedCurrency::factor($shared);
         if ($shared->type == 1) {
             $data = $this->mcyRequest($shared->domain . "/plugin/open-api/item", $shared->app_id, $shared->app_key, [
@@ -377,6 +403,9 @@ class Shared implements \App\Service\Shared
 
     public function inventoryState(\App\Model\Shared $shared, Commodity $commodity, int $cardId, int $num, string $race): bool
     {
+        if ((int)$shared->type === 3) {
+            return (int)$this->getItemStock($commodity, $shared, (string)$commodity->shared_code) >= $num;
+        }
         if ($shared->type == 1) {
             $config = Ini::toArray($commodity->config);
             $data = $this->mcyRequest($shared->domain . "/plugin/open-api/sku/state", $shared->app_id, $shared->app_key, [
@@ -398,6 +427,9 @@ class Shared implements \App\Service\Shared
 
     public function trade(\App\Model\Shared $shared, Commodity $commodity, string $contact, int $num, int $cardId, int $device, string $password, string $race, ?array $sku, ?string $widget, string $requestNo): string
     {
+        if ((int)$shared->type === 3) {
+            return $this->dolaPickup->trade($shared, $num, $requestNo, $this->dolaKeys($shared));
+        }
         $wg = (array)json_decode((string)$widget, true);
 
         if ($shared->type == 1) {
@@ -443,6 +475,9 @@ class Shared implements \App\Service\Shared
 
     public function draftCard(\App\Model\Shared $shared, string $code, array $map = []): array
     {
+        if ((int)$shared->type === 3) {
+            return [];
+        }
         //转发前剔除 draft 以外的 <操作符>-<列> 过滤：预选列表只该按预览内容 draft 搜。否则会把访客构造的
         //search-secret/betweenStart-secret 原样转发到上游 /shared/commodity/draftCard，成为上游卡密盲注
         //预言机的跳板（哪怕上游没打补丁，本站也不当放大器）。
@@ -513,6 +548,9 @@ class Shared implements \App\Service\Shared
 
     public function getDraft(\App\Model\Shared $shared, string $code, int $cardId): array
     {
+        if ((int)$shared->type === 3) {
+            return ['draft_premium' => 0];
+        }
         $draft = $this->protocolOf($shared) === self::PROTOCOL_LEGACY
             ? null
             : $this->postOptional($shared->domain . "/shared/commodity/draft", $shared->app_id, $shared->app_key, [
@@ -534,6 +572,17 @@ class Shared implements \App\Service\Shared
 
     public function inventory(\App\Model\Shared $shared, Commodity $commodity, string $race = ""): array
     {
+        if ((int)$shared->type === 3) {
+            \App\Util\Schema::ensureDolaPickup();
+            $aggregate = $this->dolaPickup->aggregate((string)$shared->domain, $this->dolaKeys($shared));
+            return [
+                'delivery_way' => 0,
+                'draft_status' => 0,
+                'factory_price' => 0,
+                'count' => $aggregate['remaining'],
+                'stock' => $aggregate['remaining'],
+            ];
+        }
         $factor = SharedCurrency::factor($shared);
         if ($shared->type == 1) {
             $config = Ini::toArray($commodity->config);
@@ -586,6 +635,11 @@ class Shared implements \App\Service\Shared
 
     public function getItemStock(Commodity $commodity, \App\Model\Shared $shared, string $code, ?string $race = null, ?array $sku = []): string
     {
+        if ((int)$shared->type === 3) {
+            \App\Util\Schema::ensureDolaPickup();
+            $aggregate = $this->dolaPickup->aggregate((string)$shared->domain, $this->dolaKeys($shared));
+            return (string)$aggregate['remaining'];
+        }
         if ($shared->type == 1) {
             $result = $this->inventory($shared, $commodity, $race);
             return isset($result['count']) ? (string)$result['count'] : "0";
@@ -658,6 +712,10 @@ class Shared implements \App\Service\Shared
 
     public function getValuation(Commodity $commodity, \App\Model\Shared $shared, string $code, int $num, ?string $race = null, ?array $sku = [], ?int $cardId = 0): string|float|int
     {
+        //Dola KEY 是预付库存，没有逐笔扣款接口；本地成本由商品 factory_price 兜底。
+        if ((int)$shared->type === 3) {
+            return 0;
+        }
         $factor = SharedCurrency::factor($shared);
         try {
             //config 为 null 的商品（没配种类/SKU）在 strict_types 下会让 Ini::toArray 抛
@@ -834,6 +892,9 @@ class Shared implements \App\Service\Shared
      */
     public function remoteCost(\App\Model\Shared $shared, Commodity $commodity, array $remoteItem): ?string
     {
+        if ((int)$shared->type === 3) {
+            return null;
+        }
         $value = $remoteItem['factory_price'] ?? null;
         if (!is_numeric($value)) {
             try {
