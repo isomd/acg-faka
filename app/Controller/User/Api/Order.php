@@ -11,7 +11,7 @@ use App\Model\Config;
 use App\Model\Pay;
 use App\Model\UserRecharge;
 use App\Util\CallbackIpWhitelist;
-use App\Util\Captcha;
+use App\Util\TradeCaptcha;
 use App\Util\Client;
 use App\Util\Date;
 use App\Util\PayProfile;
@@ -43,10 +43,10 @@ class Order extends User
     {
         $map = $request->post(flags: Filter::NORMAL);
         if (Config::get("trade_verification") == 1) {
-            if (!Captcha::check((int)$map['captcha'], "trade")) {
+            if (!is_string($map['captcha'] ?? null) || !is_string($map['captcha_id'] ?? null)
+                || !TradeCaptcha::check($map['captcha'], $map['captcha_id'])) {
                 throw new JSONException("验证码错误");
             }
-            Captcha::destroy("trade");
         }
 
         $map['device'] = Client::getDeviceTypeByUa($request->header("User-Agent"));

@@ -17,6 +17,15 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    services:
+      captcha-test-redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     environment: production
     permissions:
       contents: read
@@ -29,7 +38,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: bcmath, curl, gd, mbstring, openssl, pdo_mysql, zip
+          extensions: bcmath, curl, gd, mbstring, openssl, pdo_mysql, redis, zip
           coverage: none
 
       - name: 核对加密配置和源码
@@ -51,6 +60,12 @@ jobs:
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tests/EncryptedDeploymentConfigTest.php
           php tests/MercuryProtocolTest.php
+          php tests/TradeCaptchaTest.php
+
+      - name: Redis 验证码并发回归测试
+        env:
+          CAPTCHA_TEST_REDIS_PATH: 'tcp://127.0.0.1:6379?database=15&prefix=acg_captcha_test:'
+        run: php tests/TradeCaptchaTest.php
 
       - name: JavaScript 环境
         uses: actions/setup-node@v4
@@ -59,6 +74,9 @@ jobs:
 
       - name: 首页实时库存回归测试
         run: node tests/CommodityListStockTest.js
+
+      - name: 商品页验证码回归测试
+        run: node tests/ItemCaptchaTest.js
 
       - name: 准备 Buildx
         if: inputs.deploy_existing_sha == ''

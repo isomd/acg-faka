@@ -26,6 +26,13 @@ class Captcha
         if (Throttle::tooMany("captcha:ip:" . Client::getAddress(), 100, 60)) {
             throw new JSONException("请求过于频繁，请稍后再试");
         }
-        \App\Util\Captcha::generate($action);
+        $challenge = $_GET['captcha_id'] ?? '';
+        $previous = $_GET['previous'] ?? '';
+        if ($action === 'trade' && (!is_string($challenge)
+                || !\App\Util\TradeCaptcha::validId($challenge))) {
+            throw new JSONException('验证码标识无效，请刷新商品页面');
+        }
+        \App\Util\Captcha::generate($action,
+            is_string($challenge) ? $challenge : '', is_string($previous) ? $previous : '');
     }
 }

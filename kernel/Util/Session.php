@@ -14,6 +14,17 @@ class Session
             if (headers_sent()) {
                 return;
             }
+            // phpredis disables locking by default. Keep read/modify/write and
+            // one-time challenge consumption serialized in every Redis mode
+            // (encrypted deployment config and environment-based deployment).
+            if (ini_get('session.save_handler') === 'redis') {
+                foreach (['redis.session.locking_enabled' => '1', 'redis.session.lock_retries' => '100',
+                          'redis.session.lock_wait_time' => '20000', 'redis.session.lock_expire' => '10'] as $option => $value) {
+                    if (ini_set($option, $value) === false) {
+                        throw new \RuntimeException('无法启用 Redis 会话锁');
+                    }
+                }
+            }
             session_start();
         }
     }

@@ -218,13 +218,26 @@
     }
 
     function _CaptchaRefresh() {
-        const baseSrc = '/user/captcha/image?action=trade';
-        $('.captcha-img').attr('src', baseSrc + '&_t=' + Date.now());
+        const $image = $('.captcha-img');
+        if (!$image.length) return;
+        const $id = $vstack.find('input[name=captcha_id]');
+        const previous = $id.val();
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        const id = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+        $id.val(id);
+        $vstack.find('input[name=captcha]').val('');
+        $image.attr('src', '/user/captcha/image?action=trade&captcha_id=' + id
+            + '&previous=' + encodeURIComponent(previous));
     }
 
     function _RegisterCaptchaRefresh() {
         $('.captcha-img').click(() => {
             _CaptchaRefresh();
+        });
+        // Back/forward cache may restore a previously consumed challenge.
+        window.addEventListener('pageshow', event => {
+            if (event.persisted) _CaptchaRefresh();
         });
     }
 
@@ -247,6 +260,7 @@
             post["request_no"] = _pendingRequestNo;
             util.post("/user/api/order/trade", post, res => {
                 _pendingRequestNo = '';
+                _CaptchaRefresh();
                 if (post["pay_id"] == 1) {
                     //余额购买，直接反馈
                     treasure.show(res.data.tradeNo, res.data.secret, res.data.leave_message);

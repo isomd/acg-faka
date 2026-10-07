@@ -64,6 +64,7 @@ class Index extends User
         hook(Hook::USER_API_INDEX_COMMODITY_DETAIL_INFO, $item);
 
         $item['is_stock'] = $item['stock'] > 0;
+        $item['captcha_id'] = bin2hex(random_bytes(16));
         if ($item['inventory_hidden'] == 1) {
             //模糊库存文案直接渲染进模板，就地翻译
             $item['stock'] = lang(match (true) {

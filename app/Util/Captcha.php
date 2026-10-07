@@ -31,13 +31,17 @@ class Captcha
      * 生成验证码
      * @param string $sessionName
      */
-    public static function generate(string $sessionName): void
+    public static function generate(string $sessionName, string $challenge = '', string $previous = ''): void
     {
-        $code = '';
-        for ($i = 0; $i < self::LEN; $i++) {
-            $code .= random_int(0, 9);
+        if ($sessionName === 'trade') {
+            $code = TradeCaptcha::issue($challenge, $previous);
+        } else {
+            $code = '';
+            for ($i = 0; $i < self::LEN; $i++) {
+                $code .= random_int(0, 9);
+            }
+            Session::set($sessionName, $code);
         }
-        Session::set($sessionName, $code);
 
         //验证码是一次性凭据，任何一层缓存住都会让用户看到过期的图
         if (!headers_sent()) {

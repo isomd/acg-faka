@@ -110,6 +110,7 @@
                             </div>
 
                             #{if $item.trade_captcha == 1}
+                                <input type="hidden" name="captcha_id" value="#{$item.captcha_id}">
                                 <div>
                                     <label class="form-label mb-1">#{t("人机验证")}</label>
                                     <div class="input-group" style="width: 240px;">
@@ -117,7 +118,7 @@
                                                name="captcha">
                                         <div class="input-group-append">
                                             <img class="input-group-text captcha-img"
-                                                 src="/user/captcha/image?action=trade"/>
+                                                 src="/user/captcha/image?action=trade&amp;captcha_id=#{$item.captcha_id}"/>
                                         </div>
                                     </div>
                                 </div>
@@ -151,5 +152,5 @@
 
 
 </main>
-#{ready("/assets/user/controller/index/item.js")}
+#{ready("/assets/user/controller/index/item.js?rev=isolated-captcha-v1")}
 #{include file="./Footer.html"}
