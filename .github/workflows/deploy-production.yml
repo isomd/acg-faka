@@ -52,10 +52,6 @@ jobs:
           php tests/EncryptedDeploymentConfigTest.php
           php tests/MercuryProtocolTest.php
 
-      - name: 准备 QEMU
-        if: inputs.deploy_existing_sha == ''
-        uses: docker/setup-qemu-action@v3
-
       - name: 准备 Buildx
         if: inputs.deploy_existing_sha == ''
         uses: docker/setup-buildx-action@v3
@@ -85,7 +81,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.release.outputs.tags }}
           cache-from: type=gha
