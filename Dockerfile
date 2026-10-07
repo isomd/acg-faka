@@ -201,6 +201,9 @@ RUN set -eux; \
     chmod 755 "${ACG_HOME}"; \
     test -L "${ACG_HOME}/app/Plugin"
 
+# Also visible to docker exec, not only to children of the entrypoint.
+ENV ACG_CONFIG_RUNTIME_KEY_FILE=/run/acg-config/derived-key.json
+
 VOLUME ["/data"]
 
 EXPOSE 80 443

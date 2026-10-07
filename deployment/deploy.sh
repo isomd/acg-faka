@@ -50,6 +50,7 @@ trap rollback ERR
 docker run -d --name "$name" --restart unless-stopped \
     -p "${http_port}:80" \
     --add-host host.docker.internal:host-gateway \
+    --tmpfs /run/acg-config:rw,noexec,nosuid,nodev,size=1m,mode=0700 \
     --mount "type=bind,src=$base/data,dst=/data" \
     --mount "type=bind,src=$key_path,dst=/run/secrets/acg-deploy-key,readonly" \
     -e ACG_ENCRYPTED_CONFIG=/opt/acg-faka/database.enc.json \

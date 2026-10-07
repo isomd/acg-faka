@@ -21,16 +21,90 @@ final class EncryptedDeploymentConfig
             return self::$cached;
         }
         $path = (string)getenv('ACG_ENCRYPTED_CONFIG');
-        $keyPath = (string)getenv('ACG_CONFIG_KEY_FILE');
-        if ($path === '' || $keyPath === '' || !is_readable($path) || !is_readable($keyPath)) {
-            throw new RuntimeException('加密部署配置或解密密钥不可读取');
+        [$raw, $envelope] = self::readEnvelope($path);
+        $runtimePath = (string)getenv('ACG_CONFIG_RUNTIME_KEY_FILE');
+        // Docker prepares this key before starting FPM. Never silently fall back
+        // to PBKDF2 if the explicitly configured runtime key is missing/stale.
+        $key = $runtimePath !== '' ? self::readRuntimeKey($runtimePath, $raw)
+            : self::deriveKey(self::readSecret(), $envelope);
+        self::$cached = self::decryptConfig($envelope, $key);
+        return self::$cached;
+    }
+
+    /** CLI startup only: authenticate the ciphertext before publishing a key. */
+    public static function prepareRuntimeKey(string $target): void
+    {
+        if (PHP_SAPI !== 'cli') {
+            throw new RuntimeException('运行时密钥只能在服务启动时生成');
         }
-        $envelope = json_decode((string)file_get_contents($path), true, 8, JSON_THROW_ON_ERROR);
+        if ($target === '' || !is_dir(dirname($target))) {
+            throw new RuntimeException('运行时密钥目录不存在');
+        }
+        [$raw, $envelope] = self::readEnvelope((string)getenv('ACG_ENCRYPTED_CONFIG'));
+        $key = self::deriveKey(self::readSecret(), $envelope);
+        self::decryptConfig($envelope, $key);
+        $record = json_encode(['version' => 1, 'envelope_sha256' => hash('sha256', $raw),
+            'key' => base64_encode($key)], JSON_THROW_ON_ERROR);
+        $temporary = $target . '.tmp-' . bin2hex(random_bytes(8));
+        $previousUmask = umask(0077);
+        try {
+            // 0600 from creation, atomic replacement on the same tmpfs. No
+            // plaintext database/Redis configuration is written anywhere.
+            if (file_put_contents($temporary, $record, LOCK_EX) !== strlen($record)
+                || !chmod($temporary, 0600) || !rename($temporary, $target)) {
+                throw new RuntimeException('无法保存运行时密钥');
+            }
+        } finally {
+            umask($previousUmask);
+            if (is_file($temporary)) unlink($temporary);
+        }
+    }
+
+    private static function readSecret(): string
+    {
+        $keyPath = (string)getenv('ACG_CONFIG_KEY_FILE');
+        if ($keyPath === '' || !is_readable($keyPath)) {
+            throw new RuntimeException('部署配置解密密钥不可读取');
+        }
+        return trim((string)file_get_contents($keyPath));
+    }
+
+    /** @return array{string, array} */
+    private static function readEnvelope(string $path): array
+    {
+        if ($path === '' || !is_readable($path)) {
+            throw new RuntimeException('加密部署配置不可读取');
+        }
+        $raw = (string)file_get_contents($path);
+        $envelope = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
         if (!is_array($envelope) || ($envelope['version'] ?? null) !== 1 || ($envelope['cipher'] ?? null) !== 'aes-256-gcm') {
             throw new RuntimeException('加密部署配置格式不支持');
         }
-        $secret = trim((string)file_get_contents($keyPath));
-        $key = self::deriveKey($secret, $envelope);
+        if (isset($envelope['kdf'])) {
+            if ($envelope['kdf'] !== 'pbkdf2-sha256') {
+                throw new RuntimeException('部署配置派生算法无效');
+            }
+            self::decode($envelope, 'salt', 16);
+        }
+        return [$raw, $envelope];
+    }
+
+    private static function readRuntimeKey(string $path, string $raw): string
+    {
+        if (!is_readable($path)) {
+            throw new RuntimeException('运行时密钥不可读取，请重启服务');
+        }
+        $record = json_decode((string)file_get_contents($path), true, 4, JSON_THROW_ON_ERROR);
+        if (!is_array($record) || ($record['version'] ?? null) !== 1
+            || !is_string($record['envelope_sha256'] ?? null)
+            || !hash_equals(hash('sha256', $raw), $record['envelope_sha256'])) {
+            throw new RuntimeException('运行时密钥与密文版本不匹配，请重启服务');
+        }
+        return self::decode($record, 'key', 32);
+    }
+
+    private static function decryptConfig(array $envelope, string $key): array
+    {
         $nonce = self::decode($envelope, 'nonce', 12);
         $tag = self::decode($envelope, 'tag', 16);
         $ciphertext = self::decode($envelope, 'data');
@@ -42,7 +116,6 @@ final class EncryptedDeploymentConfig
         if (!is_array($config) || !isset($config['database']) || !is_array($config['database'])) {
             throw new RuntimeException('部署配置缺少 database 对象');
         }
-        self::$cached = $config;
         return $config;
     }
 

@@ -59,6 +59,7 @@ jobs:
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tests/EncryptedDeploymentConfigTest.php
+          php tests/RuntimeDeploymentKeyTest.php
           php tests/MercuryProtocolTest.php
           php tests/TradeCaptchaTest.php
 
@@ -117,6 +118,10 @@ jobs:
         run: |
           docker pull "$IMAGE"
           docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -f /opt/acg-faka/database.enc.json && test -f /opt/acg-skel/pay/Mercury/Impl/Pay.php'
+
+      - name: 验证启动派生密钥和容器权限
+        if: inputs.deploy_existing_sha == ''
+        run: bash tests/RuntimeKeyContainerTest.sh
 
       - name: 验证服务器可匿名拉取
         run: |

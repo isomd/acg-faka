@@ -171,10 +171,17 @@ SESSION_INI=/usr/local/etc/php/conf.d/zz-acg-session.ini
 if [ -n "${ACG_ENCRYPTED_CONFIG:-}" ]; then
     [ -r "${ACG_CONFIG_KEY_FILE:-}" ] || { echo '缺少部署配置密钥文件' >&2; exit 1; }
     [ -r "${ACG_ENCRYPTED_CONFIG}" ] || { echo '缺少加密部署配置文件' >&2; exit 1; }
-    install -m 0400 -o www-data -g www-data "${ACG_CONFIG_KEY_FILE}" /run/acg-config-key
-    export ACG_CONFIG_KEY_FILE=/run/acg-config-key
+    # The expensive passphrase KDF runs ONCE before FPM starts. The derived
+    # key must live on an explicit tmpfs, never in /data or the image layer.
+    [ ! -L /run/acg-config ] && awk '$2 == "/run/acg-config" && $3 == "tmpfs" { found=1 } END { exit !found }' /proc/mounts \
+        || { echo '加密部署需要 --tmpfs /run/acg-config:rw,noexec,nosuid,nodev,size=1m,mode=0700' >&2; exit 1; }
+    install -d -m 0750 -o root -g www-data /run/acg-config
+    export ACG_CONFIG_RUNTIME_KEY_FILE=/run/acg-config/derived-key.json
+    php -d zend.exception_ignore_args=1 -r 'require "/var/www/html/vendor/autoload.php"; \Kernel\Util\EncryptedDeploymentConfig::prepareRuntimeKey(getenv("ACG_CONFIG_RUNTIME_KEY_FILE"));' >/dev/null
+    chown root:www-data "${ACG_CONFIG_RUNTIME_KEY_FILE}"
+    chmod 0440 "${ACG_CONFIG_RUNTIME_KEY_FILE}"
     printf 'session.save_handler = files\nsession.save_path = "/var/www/html/runtime/session"\n' > "${SESSION_INI}"
-    php -r 'require "/var/www/html/vendor/autoload.php"; \Kernel\Util\EncryptedDeploymentConfig::database();' >/dev/null
+    php -d zend.exception_ignore_args=1 -r 'require "/var/www/html/vendor/autoload.php"; \Kernel\Util\EncryptedDeploymentConfig::database();' >/dev/null
 elif [ -n "${ACG_REDIS_HOST:-}" ]; then
     printf 'session.save_handler = redis\nsession.save_path = "tcp://%s:%s?database=%s&prefix=acg_sess:"\n' \
         "${ACG_REDIS_HOST}" "${ACG_REDIS_PORT:-6379}" "${ACG_REDIS_DB:-1}" > "${SESSION_INI}"
