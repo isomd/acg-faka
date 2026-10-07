@@ -42,7 +42,7 @@ final class Pay extends Base implements \App\Pay\Pay
             'currency' => $config['currency'],
             'benefitSnapshot' => null,
             'paymentMethodCode' => $config['payment_method_code'],
-            'returnParams' => ['clientOrderNo' => $this->tradeNo]
+            'returnParams' => Protocol::returnParams($this->tradeNo)
         ];
 
         $timestamp = gmdate('Y-m-d\TH:i:s\Z');

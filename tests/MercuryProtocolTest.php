@@ -26,6 +26,11 @@ $request = [
     'clientOrderNo' => 'local-20260930-001'
 ];
 assertSameValue('money integer', '7.00', Protocol::money('7'));
+assertSameValue(
+    'return parameters use shop query key, not reserved clientOrderNo',
+    ['tradeNo' => 'local-20260930-001'],
+    Protocol::returnParams('local-20260930-001')
+);
 assertSameValue('money positive half-up', '1.01', Protocol::money('1.005'));
 assertSameValue('money negative half-up', '-1.01', Protocol::money('-1.005'));
 assertSameValue('exact business money', '14.00', Protocol::exactPositiveMoney(14.0));

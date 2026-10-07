@@ -76,6 +76,12 @@ final class Protocol
         return hash_hmac('sha256', $orderCanonical, $secret);
     }
 
+    public static function returnParams(string $tradeNo): array
+    {
+        // Mercury reserves clientOrderNo; the shop query page expects tradeNo.
+        return ['tradeNo' => $tradeNo];
+    }
+
     public static function webhookSignature(string $eventId, string $timestamp, string $rawBody, string $secret): string
     {
         return hash_hmac('sha256', $eventId . ':' . $timestamp . ':' . $rawBody, $secret);
