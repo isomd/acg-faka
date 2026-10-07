@@ -52,6 +52,14 @@ jobs:
           php tests/EncryptedDeploymentConfigTest.php
           php tests/MercuryProtocolTest.php
 
+      - name: JavaScript 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 首页实时库存回归测试
+        run: node tests/CommodityListStockTest.js
+
       - name: 准备 Buildx
         if: inputs.deploy_existing_sha == ''
         uses: docker/setup-buildx-action@v3
