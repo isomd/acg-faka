@@ -20,7 +20,7 @@
                             #{if $item.seckill_status == 1}
                                 <span class="badge-soft snap-up" style="display: none;"></span>
                             #{/if}
-                            <span class="badge-soft badge-soft-success">#{if $item.delivery_way == 0}#{t("自动发货")}#{else}#{t("在线发货")}#{/if}</span>
+                            <span class="badge-soft badge-soft-success">#{if $item.redeem_delivery}#{t("付款发兑换码")}#{elseif $item.delivery_way == 0}#{t("自动发货")}#{else}#{t("在线发货")}#{/if}</span>
                             <span class="badge-soft badge-soft-primary">#{t("已售")} #{$item.order_sold}</span>
                             <span class="badge-soft badge-soft-success item-stock">#{t("库存")} #{$item.stock}</span>
                             <span class="badge-soft badge-soft-info shared-button"><i
@@ -30,6 +30,12 @@
                             <div class="price"><i class="fa-duotone fa-regular fa-spinner-third icon-spin fs-6"></i></div>
                         </div>
                         <form method="post" class="vstack gap-3">
+                            #{if $item.redeem_delivery}
+                                <div class="alert alert-info mb-0">
+                                    #{t("付款后获得一个兑换码，购买数量即为可提取账号总额度，不会立即提取账号。您可在兑换码提货入口按需分批提取。")}
+                                    <a href="/user/index/redeem">#{t("兑换码提货")}</a>
+                                </div>
+                            #{/if}
                             #{if !empty($item.config.category)}
                                 <div>
                                     <label class="form-label mb-1">#{t("宝贝类型")}</label>

@@ -139,7 +139,8 @@ final class Schema
     }
 
     /**
-     * 兑换码提货。码本体只以 HMAC 摘要保存，明文仅在生成/导入响应中出现。
+     * 兑换码提货。此表只保存码本体的 HMAC 摘要；自动购买的明文沿用
+     * 受保护的订单交付内容，后台生成/导入则只在对应响应中返回明文。
      */
     public static function ensureRedeemCode(): void
     {
@@ -159,6 +160,8 @@ final class Schema
                 $table->unsignedInteger('used_quantity')->default(0);
                 $table->unsignedTinyInteger('status')->default(0);
                 $table->unsignedInteger('order_id')->nullable();
+                $table->unsignedInteger('purchase_order_id')->nullable()->unique('redeem_purchase_order_unique');
+                $table->unsignedInteger('shared_id')->default(0)->index('redeem_code_shared');
                 $table->char('result_trade_no', 19)->nullable();
                 $table->string('result_product_name', 255)->nullable();
                 $table->longText('result_secret')->nullable();
@@ -261,8 +264,25 @@ final class Schema
         self::tableExists('mercury_webhook_event') && @file_put_contents(self::MARK_DIR . '/table_mercury_webhook_event', (string)time());
     }
 
+    public static function ensureRedeemPurchase(): void
+    {
+        self::ensureRedeemCode();
+        self::ensureColumn('order', 'fulfillment_mode', static function (Blueprint $table): void {
+            $table->unsignedTinyInteger('fulfillment_mode')->default(0)->comment('0=交付账号/卡密，1=交付兑换码');
+        });
+        self::ensureColumn('order', 'fulfillment_shared_id', static function (Blueprint $table): void {
+            $table->unsignedInteger('fulfillment_shared_id')->default(0)->index('order_fulfillment_shared');
+        });
+    }
+
     private static function ensureRedeemResultColumns(): void
     {
+        self::ensureColumn('redeem_code', 'purchase_order_id', static function (Blueprint $table): void {
+            $table->unsignedInteger('purchase_order_id')->nullable()->unique('redeem_purchase_order_unique');
+        });
+        self::ensureColumn('redeem_code', 'shared_id', static function (Blueprint $table): void {
+            $table->unsignedInteger('shared_id')->default(0)->index('redeem_code_shared');
+        });
         self::ensureColumn('redeem_code', 'used_quantity', static function (Blueprint $table): void {
             $table->unsignedInteger('used_quantity')->default(0)->after('quantity');
         });

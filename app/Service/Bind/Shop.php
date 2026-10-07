@@ -16,6 +16,7 @@ use App\Model\UserGroup;
 use App\Service\Shared;
 use App\Util\Client;
 use App\Util\Ini;
+use App\Util\RedeemPurchase;
 use App\Util\Tree;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -221,6 +222,7 @@ class Shop implements \App\Service\Shop
         }
 
         $array['trade_captcha'] = (int)Config::get("trade_verification");
+        $array['redeem_delivery'] = RedeemPurchase::isProduct($commodity);
 
         if ($commodity->widget) {
             $array['widget'] = json_decode($commodity->widget, true);
@@ -276,7 +278,12 @@ class Shop implements \App\Service\Shop
             //Dola 的 KEY 也可能在上游页面被人工提货；永久 shared_stock 缓存会把已经扣掉的号继续当库存卖。
             //它的只读查询成本很低，直接回源保证下单前看到的是当前 remaining。
             if ((int)$commodity->shared->type === 3) {
-                return $this->shared->getItemStock((clone $commodity), $commodity->shared, $commodity->shared_code, $race, $sku);
+                $physical = (int)$this->shared->getItemStock((clone $commodity), $commodity->shared, $commodity->shared_code, $race, $sku);
+                if (RedeemPurchase::isProduct($commodity)) {
+                    \App\Util\Schema::ensureRedeemPurchase();
+                    return (string)RedeemPurchase::available($physical, (int)$commodity->shared_id);
+                }
+                return (string)$physical;
             }
             return $this->getSharedStock($commodity, $race, $sku);
         } else if ($commodity->delivery_way == 0) {

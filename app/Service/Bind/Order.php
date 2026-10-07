@@ -27,6 +27,7 @@ use App\Util\Ini;
 use App\Util\PayConfig;
 use App\Util\PayFactory;
 use App\Util\PayProfile;
+use App\Util\RedeemPurchase;
 use App\Util\Str;
 use Illuminate\Database\Capsule\Manager as DB;
 use Kernel\Annotation\Inject;
@@ -722,10 +723,13 @@ class Order implements \App\Service\Order
             }
         }
 
+        $redeemSale = RedeemPurchase::isProduct($commodity);
+        if ($redeemSale) RedeemPurchase::prepare($commodity);
         $rent = 0;
 
         if ($commodity->shared) {
             $stock = $this->shared->getItemStock((clone $commodity), $commodity->shared, $commodity->shared_code, $race ?: null, $sku ?: []);
+            if ($redeemSale) $stock = RedeemPurchase::available((int)$stock, (int)$commodity->shared_id);
 
             $rent = $this->shared->getValuation((clone $commodity), $commodity->shared, $commodity->shared_code, $num, $race, $sku, $cardId);
         } else {
@@ -812,8 +816,11 @@ class Order implements \App\Service\Order
             $callbackDomain = $clientDomain;
         }
 
-        DB::connection()->getPdo()->exec("set session transaction isolation level serializable");
-        $result = Db::transaction(function () use ($commodity, $rent, $rebate, $divideAmount, $business, $sku, $requestNo, $user, $userGroup, $num, $contact, $device, $amount, $owner, $pay, $cardId, $password, $coupon, $from, $widget, $race, $callbackDomain, $clientDomain) {
+        // The shared-pool row is the allocation mutex. READ COMMITTED avoids
+        // quota scans locking pending orders while their callbacks wait on it.
+        DB::connection()->getPdo()->exec('set session transaction isolation level ' . ($redeemSale ? 'read committed' : 'serializable'));
+        $result = Db::transaction(function () use ($redeemSale, $commodity, $rent, $rebate, $divideAmount, $business, $sku, $requestNo, $user, $userGroup, $num, $contact, $device, $amount, $owner, $pay, $cardId, $password, $coupon, $from, $widget, $race, $callbackDomain, $clientDomain) {
+            if ($redeemSale) RedeemPurchase::lockPool((int)$commodity->shared_id);
             $lockedCommodity = $this->lockCommodityForOrder($commodity);
 
             if ((int)$lockedCommodity->status !== 1) {
@@ -821,6 +828,12 @@ class Order implements \App\Service\Order
             }
             $this->assertTradeCommoditySnapshot($commodity, $lockedCommodity);
             $this->lockLocalDraftCardForOrder($lockedCommodity, $cardId);
+            if ($redeemSale) {
+                $physical = (int)$this->shared->getItemStock((clone $lockedCommodity), $lockedCommodity->shared, $lockedCommodity->shared_code, null, []);
+                if ($num > RedeemPurchase::available($physical, (int)$lockedCommodity->shared_id)) {
+                    throw new JSONException('可售兑换额度不足，请刷新页面后重试');
+                }
+            }
 
             if (((int)$lockedCommodity->only_user === 1 || (int)$lockedCommodity->purchase_count > 0) && $owner === 0) {
                 throw new JSONException('请先登录后再购买哦');
@@ -874,6 +887,10 @@ class Order implements \App\Service\Order
             $order->contact = trim((string)$contact);
             $order->delivery_status = 0;
             $order->card_num = $num;
+            if ($redeemSale) {
+                $order->fulfillment_mode = RedeemPurchase::CODE;
+                $order->fulfillment_shared_id = (int)$lockedCommodity->shared_id;
+            }
             $order->user_id = (int)$lockedCommodity->owner;
             $order->rent = $rent;
 
@@ -1143,6 +1160,28 @@ class Order implements \App\Service\Order
 
     public function orderSuccess(\App\Model\Order $order): string
     {
+        // Old orders and redemption/gift orders retain direct fulfillment.
+        // The mode comes from the stored order, never from a client parameter.
+        if ((int)$order->fulfillment_mode !== RedeemPurchase::CODE) {
+            return $this->completeOrder($order);
+        }
+        return DB::transaction(function () use ($order): string {
+            $locked = \App\Model\Order::query()->whereKey($order->id)->lockForUpdate()->first();
+            if (!$locked || (int)$locked->fulfillment_mode !== RedeemPurchase::CODE) {
+                throw new JSONException('兑换码购买订单状态已变更');
+            }
+            if ((int)$locked->status === 1 && (int)$locked->delivery_status === 1) {
+                $order->setRawAttributes($locked->getAttributes(), true);
+                return (string)$locked->secret;
+            }
+            $secret = $this->completeOrder($locked);
+            $order->setRawAttributes($locked->getAttributes(), true);
+            return $secret;
+        }, 3);
+    }
+
+    private function completeOrder(\App\Model\Order $order): string
+    {
         $commodity = $order->commodity;
         $order->pay_time = Date::current();
         $order->status = 1;
@@ -1158,7 +1197,8 @@ class Order implements \App\Service\Order
             $order->delivery_status = 0;
             $order->secret = $risk->message("订单正在人工审核中，通过后会立即发货，请耐心等待。");
             $order->save();
-            hook(Hook::USER_API_ORDER_PAY_AFTER, $commodity, $order, $order->pay);
+            $payment = $order->pay;
+            hook(Hook::USER_API_ORDER_PAY_AFTER, $commodity, $order, $payment);
             //跳过：拉卡密、扣库存、分成与返利账单、发货邮件 ——
             //这些副作用一个都没执行，所以审核通过后重跑一次恰好是对的
             return (string)$order->secret;
@@ -1166,7 +1206,10 @@ class Order implements \App\Service\Order
 
         $shared = $commodity->shared;
 
-        if ($shared) {
+        if ((int)$order->fulfillment_mode === RedeemPurchase::CODE) {
+            $order->secret = RedeemPurchase::issue($order);
+            $order->delivery_status = 1;
+        } elseif ($shared) {
             $sharedRequestNo = (int)$shared->type === 3 && trim((string)$order->request_no) !== ''
                 ? trim((string)$order->request_no)
                 : (string)$order->trade_no;
@@ -1208,7 +1251,8 @@ class Order implements \App\Service\Order
             }
         }
 
-        hook(Hook::USER_API_ORDER_PAY_AFTER, $commodity, $order, $order->pay);
+        $payment = $order->pay;
+        hook(Hook::USER_API_ORDER_PAY_AFTER, $commodity, $order, $payment);
 
         return (string)$order->secret;
     }

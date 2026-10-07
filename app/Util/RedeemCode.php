@@ -14,7 +14,8 @@ final class RedeemCode
     private static ?string $key = null;
 
     /**
-     * Admin-only initialization. The key stays in the database-only secret channel.
+     * Initialize before administrative issuance or a redemption-code purchase.
+     * The key stays in the database-only secret channel, never in public config.
      */
     public static function ensureKey(): string
     {

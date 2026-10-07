@@ -40,6 +40,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $race
  * @property string $request_no
  * @property array $sku
+ * @property int $fulfillment_mode 0=账号/卡密，1=兑换码（下单时保存）
+ * @property int $fulfillment_shared_id 下单时的兑换货源快照
  */
 class Order extends Model
 {

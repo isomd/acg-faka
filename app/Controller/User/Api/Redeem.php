@@ -13,11 +13,11 @@ use App\Model\Order as OrderModel;
 use App\Model\RedeemCode as RedeemCodeModel;
 use App\Model\RedeemRecord;
 use App\Service\Order;
-use App\Service\Shop;
 use App\Util\Ini;
 use App\Util\Client;
 use App\Util\Date;
 use App\Util\RedeemCode as CodeUtil;
+use App\Util\RedeemPurchase;
 use App\Util\Schema;
 use App\Util\Throttle;
 use Illuminate\Database\Capsule\Manager as DB;
@@ -34,7 +34,7 @@ class Redeem extends User
     private Order $order;
 
     #[Inject]
-    private Shop $shop;
+    private \App\Service\Shared $shared;
 
     /** 查询兑换码额度，不扣库存。 */
     public function check(Request $request): array
@@ -52,7 +52,7 @@ class Redeem extends User
     /** 按用户指定数量提货，同一 request_token 重试不会重复扣库存。 */
     public function submit(Request $request): array
     {
-        Schema::ensureRedeemCode();
+        Schema::ensureRedeemPurchase();
         $post = $request->post(flags: Filter::NORMAL);
         $normalized = CodeUtil::normalize($post['code'] ?? '');
         $quantity = (int)($post['quantity'] ?? 0);
@@ -76,8 +76,11 @@ class Redeem extends User
         }
 
         $digest = CodeUtil::digest($normalized);
+        $candidate = RedeemCodeModel::query()->with('commodity')->where('code_hash', $digest)->first();
+        $poolId = (int)($candidate?->shared_id ?: ($candidate?->commodity?->shared_id ?? 0));
         $userId = (int)($this->getUser()?->id ?? 0);
-        $result = DB::transaction(function () use ($digest, $ip, $userId, $quantity, $requestToken): array {
+        $result = DB::transaction(function () use ($poolId, $digest, $ip, $userId, $quantity, $requestToken): array {
+            if ($poolId > 0) RedeemPurchase::lockPool($poolId);
             /** @var RedeemCodeModel|null $code */
             $code = RedeemCodeModel::query()->where('code_hash', $digest)->lockForUpdate()->first();
             if (!$code) {
@@ -122,6 +125,12 @@ class Redeem extends User
             $sharedId = (int)$commodity->shared_id;
             $isLocal = $sharedId === 0;
             $isDola = $sharedId > 0 && (int)($commodity->shared?->type ?? -1) === 3;
+            if ((int)$code->shared_id > 0 && (int)$code->shared_id !== $sharedId) {
+                throw new JSONException('兑换码绑定的货源已变更，请联系商家');
+            }
+            if ($isDola && $poolId !== $sharedId) {
+                throw new JSONException('兑换货源刚刚发生变化，请刷新后重试');
+            }
             if ((int)$commodity->owner !== 0 || (int)$commodity->delivery_way !== 0 || (!$isLocal && !$isDola)) {
                 throw new JSONException('该商品不支持兑换码自动提货，请联系客服');
             }
@@ -137,6 +146,7 @@ class Redeem extends User
                 0,
                 18
             );
+            $priorDelivery = null;
             if (Schema::tableExists('dola_pickup_delivery')) {
                 $priorDelivery = DolaPickupDelivery::query()
                     ->where('request_no', $requestNo)
@@ -149,9 +159,11 @@ class Redeem extends User
                 }
             }
 
-            // giftOrder() 不带规格。本地卡密按空 race 统计；Dola 必须回源读取所有 KEY 的实时 remaining。
+            // 已有上游批次时让 Dola 的独立账本恢复/补齐；不能拿扣货后的
+            // remaining 拒绝重试（最后一批提完后库存可以是 0）。
+            // 新请求仍检查原始库存，而不是已经减去售出兑换额度的可售库存。
             $stock = $isDola
-                ? (int)$this->shop->getItemStock($commodity, null, [])
+                ? ($priorDelivery ? $quantity : (int)$this->shared->getItemStock((clone $commodity), $commodity->shared, $commodity->shared_code, null, []))
                 : Card::query()
                     ->where('commodity_id', $commodity->id)
                     ->where('status', 0)

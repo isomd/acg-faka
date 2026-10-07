@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $used_quantity
  * @property int $status
  * @property int|null $order_id
+ * @property int|null $purchase_order_id 原购买订单，不随分批兑换改变
+ * @property int $shared_id 购买时绑定的货源快照；0=旧码/后台生成
  * @property string|null $result_trade_no
  * @property string|null $result_product_name
  * @property string|null $result_secret
@@ -41,6 +43,8 @@ class RedeemCode extends Model
         'used_quantity' => 'integer',
         'status' => 'integer',
         'order_id' => 'integer',
+        'purchase_order_id' => 'integer',
+        'shared_id' => 'integer',
     ];
 
     public function commodity(): ?HasOne
